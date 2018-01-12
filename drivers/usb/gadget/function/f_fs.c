@@ -661,6 +661,7 @@ static void ffs_user_copy_worker(struct work_struct *work)
 	if (io_data->read && ret > 0) {
 		int i;
 		size_t pos = 0;
+		mm_segment_t oldfs = get_fs();
 
 		/*
 		 * Since req->length may be bigger than io_data->len (after
@@ -669,6 +670,7 @@ static void ffs_user_copy_worker(struct work_struct *work)
 		 */
 		ret = min_t(int, ret, io_data->len);
 
+		set_fs(USER_DS);
 		use_mm(io_data->mm);
 		for (i = 0; i < io_data->nr_segs; i++) {
 			size_t len = min_t(size_t, ret - pos,
@@ -683,6 +685,7 @@ static void ffs_user_copy_worker(struct work_struct *work)
 			pos += len;
 		}
 		unuse_mm(io_data->mm);
+		set_fs(oldfs);
 	}
 
 	aio_complete(io_data->kiocb, ret, ret);
