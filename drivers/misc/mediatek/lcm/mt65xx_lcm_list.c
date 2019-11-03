@@ -40,8 +40,17 @@ LCM_DRIVER *lcm_driver_list[] = {
 #if defined(OTM1284A_HD720_DSI_VDO_TM)
 	&otm1284a_hd720_dsi_vdo_tm_lcm_drv,
 #endif
+
+#if defined(OTM1285A_HD720_DSI_VDO_BY)
+	&otm1285a_hd720_dsi_vdo_by_lcm_drv,
+#endif
+
 #if defined(OTM1285A_HD720_DSI_VDO_TM)
 	&otm1285a_hd720_dsi_vdo_tm_lcm_drv,
+#endif
+
+#if defined(ILI9881_CA_HD720_DSI_VDO_YASSY)
+	&ili9881_CA_hd720_dsi_vdo_yassy_lcm_drv,
 #endif
 
 #if defined(NT35595_FHD_DSI_CMD_TRULY_8163)

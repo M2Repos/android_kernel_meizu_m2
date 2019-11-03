@@ -1235,7 +1235,7 @@ DSI_STATUS DSI_TXRX_Control(DISP_MODULE_ENUM module, cmdqRecHandle cmdq,
 	bool null_packet_en = false;
 	/*bool err_correction_en = false; */
 	bool dis_eotp_en = false;
-	bool hstx_cklp_en = false;
+	bool hstx_cklp_en = dsi_params->cont_clock ? false : true;
 	int max_return_size = 0;
 
 	switch (lane_num) {
@@ -2862,12 +2862,7 @@ static void lcm_udelay(uint32_t us)
 
 static void lcm_mdelay(uint32_t ms)
 {
-	if (ms < 10) {
-		udelay(ms * 1000);
-	} else {
-		msleep(ms);
-		/* udelay(ms*1000); */
-	}
+	udelay(ms * 350);
 }
 
 static void lcm_rar(uint32_t ms)

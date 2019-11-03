@@ -264,3 +264,21 @@ config MTK_LENS_WV511AAF_SUPPORT
 	  This config is used to enable the corresponding
 	  lens driver for the camera sensor module
 	  Set as y if the driver is used in this project
+
+config MTK_LENS_BU6429116109AF_SUPPORT
+	bool "BU6429116109AF Lens Driver"
+	default n
+	help
+	  BU6429116109AF Lens Driver
+	  This config is used to enable the corresponding
+	  lens driver for the camera sensor module
+	  Set as y if the driver is used in this project
+
+config MTK_LENS_BU6429116134AF_SUPPORT
+	bool "BU6429116134AF Lens Driver"
+	default n
+	help
+	  BU6429116134AF Lens Driver
+	  This config is used to enable the corresponding
+	  lens driver for the camera sensor module
+	  Set as y if the driver is used in this project

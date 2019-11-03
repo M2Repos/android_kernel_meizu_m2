@@ -140,7 +140,7 @@ u8 load_fw_process = 0;
 
 static u8 gup_burn_fw_app_section(struct i2c_client *client, u8 *fw_section, u16 start_addr,
 				  u32 len, u8 bank_cmd);
-static u8 gup_check_and_repair(struct i2c_client *, s32, u8 *, u32);
+u8 gup_check_and_repair(struct i2c_client *, s32, u8 *, u32);
 
 static s32 gup_i2c_read(struct i2c_client *client, u8 *buf, s32 len)
 {
@@ -2573,7 +2573,7 @@ static s32 i2c_auto_read(struct i2c_client *client, u8 *rxbuf, int len)
 	return 0;
 }
 #endif
-static u8 gup_check_and_repair(struct i2c_client *client, s32 chk_start_addr, u8 *target_fw,
+u8 gup_check_and_repair(struct i2c_client *client, s32 chk_start_addr, u8 *target_fw,
 			       u32 chk_total_length)
 {
 	s32 ret = 0;

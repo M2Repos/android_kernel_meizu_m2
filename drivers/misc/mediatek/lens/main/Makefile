@@ -33,6 +33,12 @@ endif
 obj-$(CONFIG_MTK_LENS)    += mainaf.o
 
 mainaf-y  += main_lens.o
+ifeq ($(CONFIG_MTK_LENS_BU6429116109AF_SUPPORT), y)
+mainaf-y  += common/bu6429116109af/BU6429116109AF.o
+endif
+ifeq ($(CONFIG_MTK_LENS_BU6429116134AF_SUPPORT), y)
+mainaf-y  += common/bu6429116134af/BU6429116134AF.o
+endif
 mainaf-y  += common/fm50af/FM50AF.o
 mainaf-y  += common/bu6424af/BU6424AF.o
 mainaf-y  += common/bu6429af/BU6429AF.o

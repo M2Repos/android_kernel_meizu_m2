@@ -30,7 +30,8 @@ struct input_dev *kpd_input_dev;
 static bool kpd_suspend;
 static int kpd_show_hw_keycode = 1;
 static int kpd_show_register = 1;
-unsigned long call_status = 0;
+unsigned long call_status = 2;
+static int home_button_status = 1;
 struct wake_lock kpd_suspend_lock;	/* For suspend usage */
 
 /*for kpd_memory_setting() function*/
@@ -145,10 +146,31 @@ static ssize_t kpd_show_call_state(struct device_driver *ddri, char *buf)
 	return res;
 }
 
+static ssize_t kpd_store_home_button_state(struct device_driver *ddri, const char *buf, size_t count)
+{
+	unsigned long value = simple_strtoul(buf, NULL, 10);
+	if (value != 0 && value != 1)
+		return -1;
+	else
+		home_button_status = value;
+
+	pr_info("%s: home_button_status=%d\n", __func__, home_button_status);
+
+	return count;
+}
+
+static ssize_t kpd_show_home_button_state(struct device_driver *ddri, char *buf)
+{
+	ssize_t res = snprintf(buf, PAGE_SIZE, "%d\n", home_button_status);
+	return res;
+}
+
+static DRIVER_ATTR(enable_home_button, S_IWUSR | S_IRUGO, kpd_show_home_button_state, kpd_store_home_button_state);
 static DRIVER_ATTR(kpd_call_state, S_IWUSR | S_IRUGO, kpd_show_call_state, kpd_store_call_state);
 
 static struct driver_attribute *kpd_attr_list[] = {
-	&driver_attr_kpd_call_state,
+	&driver_attr_enable_home_button,
+	&driver_attr_kpd_call_state
 };
 
 /*----------------------------------------------------------------------------*/
@@ -414,15 +436,17 @@ static void kpd_keymap_handler(unsigned long data)
 				kpd_print("(%s) HW keycode = %u\n", pressed ? "pressed" : "released", hw_keycode);
 			BUG_ON(hw_keycode >= KPD_NUM_KEYS);
 			linux_keycode = kpd_keymap[hw_keycode];
-			if (unlikely(linux_keycode == 0)) {
-				kpd_print("Linux keycode = 0\n");
-				continue;
-			}
-			kpd_aee_handler(linux_keycode, pressed);
+			if ((home_button_status && linux_keycode == KEY_HOME) || linux_keycode != KEY_HOME) {
+				if (unlikely(linux_keycode == 0)) {
+					kpd_print("Linux keycode = 0\n");
+					continue;
+				}
+				kpd_aee_handler(linux_keycode, pressed);
 
-			input_report_key(kpd_input_dev, linux_keycode, pressed);
-			input_sync(kpd_input_dev);
-			kpd_print("report Linux keycode = %u\n", linux_keycode);
+				input_report_key(kpd_input_dev, linux_keycode, pressed);
+				input_sync(kpd_input_dev);
+				kpd_print("report Linux keycode = %u\n", linux_keycode);
+			}
 		}
 	}
 

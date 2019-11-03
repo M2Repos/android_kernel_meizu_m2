@@ -17,6 +17,7 @@
 
 ifeq ($(findstring lego,$(ARCH_MTK_PROJECT)), )
 obj-y				+= leds_strobe.o
+obj-$(CONFIG_MTK_SKY81294_FLASHLIGHT)	+= leds_sky81294.o
 else
 CFILES := leds_strobe.o
 obj-m				+= flashlight_device.o

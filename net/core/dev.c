@@ -1206,6 +1206,7 @@ rollback:
 
 	return err;
 }
+EXPORT_SYMBOL(dev_change_name);
 
 /**
  *	dev_set_alias - change ifalias of a device

@@ -1,0 +1,11 @@
+config MTK_TOUCHKEY
+	bool CONFIG_MTK_TOUCHKEY
+	default n
+	help
+		Touchkey support
+
+config MTK_TOUCHKEY_AW9201_SUPPORT
+	bool "AW9201 Touchkey Driver"
+	default n
+	help
+		AW9201 Touchkey (mBack)

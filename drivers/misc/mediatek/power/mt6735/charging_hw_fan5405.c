@@ -163,7 +163,7 @@ static u32 charging_hw_init(void *data)
 	battery_log(BAT_LOG_CRTI, "fan5405  charging_hw_init  line=%d\n", __LINE__);
 
 #if defined(HIGH_BATTERY_VOLTAGE_SUPPORT)
-	fan5405_reg_config_interface(0x06, 0x47); /*ISAFE = 1050mA, VSAFE = 4.34V*/
+	fan5405_reg_config_interface(0x06, 0x77); /*ISAFE = 1250mA, VSAFE = 4.34V*/
 #else
 	fan5405_reg_config_interface(0x06, 0x70);
 #endif
@@ -172,7 +172,7 @@ static u32 charging_hw_init(void *data)
 	fan5405_reg_config_interface(0x01, 0xb8); /*TE=1, CE=0, HZ_MODE=0, OPA_MODE=0*/
 	fan5405_reg_config_interface(0x05, 0x03);
 	if (!charging_init_flag) {
-		fan5405_reg_config_interface(0x04, 0x19); /*97mA*/
+		fan5405_reg_config_interface(0x04, 0x1A); /*146mA*/
 		charging_init_flag = KAL_TRUE;
 	}
 #ifdef CONFIG_ONTIM_DSM
@@ -527,7 +527,7 @@ charging_hw_init, charging_dump_register, charging_enable, charging_set_cv_volta
 	    charging_get_power_source, charging_get_csdac_full_flag,
 	    charging_set_ta_current_pattern, charging_set_error_state};
 
-s32 fan5405_chr_control_interface(CHARGING_CTRL_CMD cmd, void *data)
+s32 chr_control_interface(CHARGING_CTRL_CMD cmd, void *data)
 {
 	s32 status;
 

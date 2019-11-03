@@ -10,6 +10,12 @@ config CUSTOM_KERNEL_FLASHLIGHT
           Kernel space cameara flashlight driver. You can use this driver
           choose cameara flashlight type.
 
+config MTK_SKY81294_FLASHLIGHT
+	bool "MTK_SKY81294_FLASHLIGHT"
+	default n
+	help
+	  SKY81294 flashlight driver.
+
 config MTK_FLASHLIGHT_USE_MODULE
 	bool "Mediatek flashlight driver build as module"
 	default n

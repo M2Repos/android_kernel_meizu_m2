@@ -21,7 +21,7 @@
 // ============================================================*/
 /*#define SOC_BY_AUXADC*/
 #define SOC_BY_HW_FG
-/*#define HW_FG_FORCE_USE_SW_OCV*/
+#define HW_FG_FORCE_USE_SW_OCV
 /*#define SOC_BY_SW_FG*/
 
 /*
@@ -52,15 +52,15 @@
 #define FG_METER_RESISTANCE 0
 
 /* Qmax for battery  */
-#define Q_MAX_POS_50 1463
-#define Q_MAX_POS_25 1437
-#define Q_MAX_POS_0 1220
-#define Q_MAX_NEG_10 1137
+#define Q_MAX_POS_50 2345
+#define Q_MAX_POS_25 2347
+#define Q_MAX_POS_0 2339
+#define Q_MAX_NEG_10 2269
 
-#define Q_MAX_POS_50_H_CURRENT 1511
-#define Q_MAX_POS_25_H_CURRENT 1462
-#define Q_MAX_POS_0_H_CURRENT 818
-#define Q_MAX_NEG_10_H_CURRENT 149
+#define Q_MAX_POS_50_H_CURRENT 2302
+#define Q_MAX_POS_25_H_CURRENT 2297
+#define Q_MAX_POS_0_H_CURRENT 2139
+#define Q_MAX_NEG_10_H_CURRENT 1184
 
 
 /* Discharge Percentage */
@@ -74,7 +74,7 @@
 #else
 #define CUST_TRACKING_POINT  1
 #endif
-#define CUST_R_SENSE 68
+#define CUST_R_SENSE 56
 #define CUST_HW_CC 0
 #define AGING_TUNING_VALUE 103
 #define CUST_R_FG_OFFSET 0
@@ -82,7 +82,7 @@
 #define OCV_BOARD_COMPESATE	0 /*mV */
 #define R_FG_BOARD_BASE 1000
 #define R_FG_BOARD_SLOPE 1000 /*slope*/
-#define CAR_TUNE_VALUE 86 /*1.00*/
+#define CAR_TUNE_VALUE 118 /*1.00*/
 
 
 /* HW Fuel gague  */
@@ -103,8 +103,7 @@
 #define BATTERYPSEUDO100		95
 #define BATTERYPSEUDO1			4
 
-/* #define Q_MAX_BY_SYS */
-#define Q_MAX_SYS_VOLTAGE		3300
+#define Q_MAX_BY_SYS
 #define SHUTDOWN_GAUGE0
 #define SHUTDOWN_GAUGE1_XMINS
 #define SHUTDOWN_GAUGE1_MINS		60
@@ -149,7 +148,9 @@
 //#define Q_MAX_BY_CURRENT		//7. Qmax variant by current loading.
 */
 #define FG_BAT_INT
-#define IS_BATTERY_REMOVE_BY_PMIC
+/*#define IS_BATTERY_REMOVE_BY_PMIC*/
+
+#define MTK_MULTI_BAT_PROFILE_SUPPORT
 
 #elif defined(CONFIG_ARCH_MT6735M)
 /* ============================================================

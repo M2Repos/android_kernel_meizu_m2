@@ -81,6 +81,7 @@ obj-$(CONFIG_MTK_DEVINFO_DRIVER_V2) += devinfo/
 obj-$(CONFIG_MTK_LCM) += lcm/
 obj-$(CONFIG_MTK_LCM) += ext_disp/
 obj-$(CONFIG_MTK_HDMI_SUPPORT) += hdmi/
+obj-$(CONFIG_MTK_TOUCHKEY) += touchkey/
 obj-$(CONFIG_MTK_FB) += video/
 obj-$(CONFIG_MTK_GPU_SUPPORT) += gpu/
 obj-$(CONFIG_MTK_SMI_EXT)	+= smi/

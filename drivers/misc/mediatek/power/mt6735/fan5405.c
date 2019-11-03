@@ -40,16 +40,17 @@ ONTIM_DEBUG_DECLARE_AND_INIT(charge_ic, charge_ic, 8);
 #ifdef FAN5405_BUSNUM
 #undef FAN5405_BUSNUM
 #endif
-#define FAN5405_BUSNUM	3
+#define FAN5405_BUSNUM	1
 
 static struct i2c_client *new_client;
 static const struct i2c_device_id fan5405_i2c_id[] = { {"fan5405", 0}, {} };
 
+kal_bool chargin_hw_init_done = KAL_FALSE;
 static int fan5405_driver_probe(struct i2c_client *client, const struct i2c_device_id *id);
 
 #ifdef CONFIG_OF
 static const struct of_device_id fan5405_of_match[] = {
-	{.compatible = "fan5405",},
+	{.compatible = "mediatek,fan5405",},
 	{},
 };
 
@@ -545,7 +546,7 @@ void fan5405_hw_component_detect(void)
 
 	ret = fan5405_read_interface(0x03, &val, 0xFF, 0x0);
 
-	if (val == 0x94)
+	if (val == 0)
 		g_fan5405_hw_exist = 0;
 	else
 		g_fan5405_hw_exist = 1;
@@ -573,20 +574,14 @@ void fan5405_dump_register(void)
 
 static int fan5405_driver_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
-	int ret = 0;
-
 	new_client = client;
+
+	battery_log(BAT_LOG_CRTI, "fan5405:fan5405_driver_probe\n");
 	fan5405_hw_component_detect();
 	fan5405_dump_register();
+	chargin_hw_init_done = KAL_TRUE;
 
-	if (is_fan5405_exist() == 0)
-		chargin_hw_init_done = KAL_TRUE;
-	else
-		ret = -1;
-
-	battery_log(BAT_LOG_CRTI, "fan5405_driver_probe  line=%d\n", __LINE__);
-
-	return ret;
+	return 0;
 }
 
 /**********************************************************

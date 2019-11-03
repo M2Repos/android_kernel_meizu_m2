@@ -455,7 +455,6 @@ static void accdet_eint_work_callback(struct work_struct *work)
 			ACCDET_DEBUG("[Accdet] TS3A225E Detection sequence completed without successful!\n");
 		}
 #endif
-
 		accdet_init();	/* do set pwm_idle on in accdet_init*/
 
 #ifdef CONFIG_ACCDET_PIN_RECOGNIZATION
@@ -662,18 +661,30 @@ static int key_check(int b)
 }
 
 #endif
-
+bool last_no_mic = false;
 static void send_accdet_status_event(int cable_type, int status)
 {
 	switch (cable_type) {
 	case HEADSET_NO_MIC:
 		input_report_switch(kpd_accdet_dev, SW_HEADPHONE_INSERT, status);
+		if (status == 0)
+			input_report_switch(kpd_accdet_dev, SW_MICROPHONE_INSERT, status);
 		input_report_switch(kpd_accdet_dev, SW_JACK_PHYSICAL_INSERT, status);
 		input_sync(kpd_accdet_dev);
 		ACCDET_DEBUG("[Accdet]HEADSET_NO_MIC(3-pole) %s\n", status?"PlugIn":"PlugOut");
+		if (status)
+			last_no_mic = true;
+		else if (last_no_mic)
+			last_no_mic = false;
 		break;
 	case HEADSET_MIC:
-		input_report_switch(kpd_accdet_dev, SW_HEADPHONE_INSERT, status);
+		if (last_no_mic && status) {
+			input_report_switch(kpd_accdet_dev, SW_HEADPHONE_INSERT, 0);
+			input_report_switch(kpd_accdet_dev, SW_JACK_PHYSICAL_INSERT, 0);
+			input_sync(kpd_accdet_dev);
+		}
+		if (status == 0)
+			input_report_switch(kpd_accdet_dev, SW_HEADPHONE_INSERT, status);
 		input_report_switch(kpd_accdet_dev, SW_MICROPHONE_INSERT, status);
 		input_report_switch(kpd_accdet_dev, SW_JACK_PHYSICAL_INSERT, status);
 		input_sync(kpd_accdet_dev);

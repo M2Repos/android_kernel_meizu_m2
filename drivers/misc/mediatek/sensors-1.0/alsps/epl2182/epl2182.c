@@ -73,7 +73,7 @@ struct epl_raw_data {
 	u16 als_ch1_raw;
 };
 
-#define EPL2182_DEV_NAME     "EPL2182"
+#define EPL2182_DEV_NAME     "epl2182"
 
 /*----------------------------------------------------------------------------*/
 #define APS_TAG                  "[ALS/PS] "
@@ -184,7 +184,7 @@ struct epl2182_priv {
 
 #ifdef CONFIG_OF
 static const struct of_device_id alsps_of_match[] = {
-	{.compatible = "mediatek,alsps"},
+	{.compatible = "mediatek,epl2182"},
 	{},
 };
 #endif
@@ -390,9 +390,6 @@ static int epl2182_get_als_value(struct epl2182_priv *obj, u16 als)
 	int invalid = 0;
 	int lux = 0;
 
-	if (als < 15)
-		return 0;
-
 	lux = (als * obj->lux_per_count) / 1000;
 
 	for (idx = 0; idx < obj->als_level_num; idx++) {
@@ -416,7 +413,6 @@ static int epl2182_get_als_value(struct epl2182_priv *obj, u16 als)
 	}
 
 	if (!invalid) {
-#if defined(MTK_AAL_SUPPORT)
 		int level_high = obj->hw.als_level[idx];
 		int level_low = (idx > 0) ? obj->hw.als_level[idx - 1] : 0;
 		int level_diff = level_high - level_low;
@@ -433,9 +429,6 @@ static int epl2182_get_als_value(struct epl2182_priv *obj, u16 als)
 			     ((level_diff + 1) >> 1)) / level_diff;
 
 		return value;
-#endif
-		/* APS_DBG("ALS: %05d => %05d\n", als, obj->hw.als_value[idx]); */
-		return obj->hw.als_value[idx];
 	}
 	APS_ERR("ALS: %05d => %05d (-1)\n", als, obj->hw.als_value[idx]);
 	return -1;
@@ -1562,6 +1555,11 @@ static int epl2182_i2c_probe(struct i2c_client *client, const struct i2c_device_
 
 	APS_FUN();
 
+	if(i2c_smbus_read_byte_data(client, 0x98) != 0x68) {
+		err = -ENOTSUPP;
+		goto exit;
+	}
+
 	obj = kzalloc(sizeof(*obj), GFP_KERNEL);
 	if (!obj) {
 		err = -ENOMEM;
@@ -1746,6 +1744,7 @@ static int epl2182_i2c_remove(struct i2c_client *client)
 
 	epl2182_i2c_client = NULL;
 	i2c_unregister_device(client);
+	alsps_factory_device_deregister(&epl2182_factory_device);
 	kfree(i2c_get_clientdata(client));
 
 	return 0;

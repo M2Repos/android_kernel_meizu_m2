@@ -15,6 +15,24 @@
 
 #define _LENS_LIST_H
 
+#ifdef CONFIG_MTK_LENS_BU6429116109AF_SUPPORT
+#define BU6429116109AF_SetI2Cclient BU6429116109AF_SetI2Cclient_Main
+#define BU6429116109AF_Ioctl BU6429116109AF_Ioctl_Main
+#define BU6429116109AF_Release BU6429116109AF_Release_Main
+extern int BU6429116109AF_SetI2Cclient(struct i2c_client *pstAF_I2Cclient, spinlock_t *pAF_SpinLock, int *pAF_Opened);
+extern long BU6429116109AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, unsigned long a_u4Param);
+extern int BU6429116109AF_Release(struct inode *a_pstInode, struct file *a_pstFile);
+#endif
+
+#ifdef CONFIG_MTK_LENS_BU6429116134AF_SUPPORT
+#define BU6429116134AF_SetI2Cclient BU6429116134AF_SetI2Cclient_Main
+#define BU6429116134AF_Ioctl BU6429116134AF_Ioctl_Main
+#define BU6429116134AF_Release BU6429116134AF_Release_Main
+extern int BU6429116134AF_SetI2Cclient(struct i2c_client *pstAF_I2Cclient, spinlock_t *pAF_SpinLock, int *pAF_Opened);
+extern long BU6429116134AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, unsigned long a_u4Param);
+extern int BU6429116134AF_Release(struct inode *a_pstInode, struct file *a_pstFile);
+#endif
+
 #define AK7371AF_SetI2Cclient AK7371AF_SetI2Cclient_Main
 #define AK7371AF_Ioctl AK7371AF_Ioctl_Main
 #define AK7371AF_Release AK7371AF_Release_Main

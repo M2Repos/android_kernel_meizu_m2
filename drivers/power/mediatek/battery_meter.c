@@ -821,23 +821,21 @@ int BattThermistorConverTemp(int Res)
 	int RES1 = 0, RES2 = 0;
 	int TBatt_Value = -200, TMP1 = 0, TMP2 = 0;
 
-	BATT_TEMPERATURE *batt_temperature_table = &Batt_Temperature_Table[g_fg_battery_id];
-
-	if (Res >= batt_temperature_table[0].TemperatureR) {
+	if (Res >= Batt_Temperature_Table[0].TemperatureR) {
 		TBatt_Value = -20;
-	} else if (Res <= batt_temperature_table[16].TemperatureR) {
+	} else if (Res <= Batt_Temperature_Table[16].TemperatureR) {
 		TBatt_Value = 60;
 	} else {
-		RES1 = batt_temperature_table[0].TemperatureR;
-		TMP1 = batt_temperature_table[0].BatteryTemp;
+		RES1 = Batt_Temperature_Table[0].TemperatureR;
+		TMP1 = Batt_Temperature_Table[0].BatteryTemp;
 
 		for (i = 0; i <= 16; i++) {
-			if (Res < batt_temperature_table[i].TemperatureR) {
-				RES1 = batt_temperature_table[i].TemperatureR;
-				TMP1 = batt_temperature_table[i].BatteryTemp;
+			if (Res < Batt_Temperature_Table[i].TemperatureR) {
+				RES1 = Batt_Temperature_Table[i].TemperatureR;
+				TMP1 = Batt_Temperature_Table[i].BatteryTemp;
 			} else {
-				RES2 = batt_temperature_table[i].TemperatureR;
-				TMP2 = batt_temperature_table[i].BatteryTemp;
+				RES2 = Batt_Temperature_Table[i].TemperatureR;
+				TMP2 = Batt_Temperature_Table[i].BatteryTemp;
 				break;
 			}
 		}
@@ -1162,59 +1160,173 @@ EXPORT_SYMBOL(force_get_tbat);
 #ifdef MTK_MULTI_BAT_PROFILE_SUPPORT
 int fgauge_get_saddles(void)
 {
-	return sizeof(battery_profile_temperature) / sizeof(BATTERY_PROFILE_STRUCT);
+	if (g_fg_battery_id == 0) {
+		return sizeof(atl_battery_profile_temperature) / sizeof(BATTERY_PROFILE_STRUCT);
+	} else if (g_fg_battery_id == 1) {
+		return sizeof(vk_battery_profile_temperature) / sizeof(BATTERY_PROFILE_STRUCT);
+	} else if (g_fg_battery_id == 2) {
+		return sizeof(sony_battery_profile_temperature) / sizeof(BATTERY_PROFILE_STRUCT);
+	} else {
+		return sizeof(bak_battery_profile_temperature) / sizeof(BATTERY_PROFILE_STRUCT);
+	}
 }
 
 int fgauge_get_saddles_r_table(void)
 {
-	return sizeof(r_profile_temperature) / sizeof(R_PROFILE_STRUCT);
+	if (g_fg_battery_id == 0) {
+		return sizeof(atl_r_profile_temperature) / sizeof(R_PROFILE_STRUCT);
+	} else if (g_fg_battery_id == 1) {
+		return sizeof(vk_r_profile_temperature) / sizeof(R_PROFILE_STRUCT);
+	} else if (g_fg_battery_id == 2) {
+		return sizeof(sony_r_profile_temperature) / sizeof(R_PROFILE_STRUCT);
+	} else {
+		return sizeof(bak_r_profile_temperature) / sizeof(R_PROFILE_STRUCT);
+	}
 }
 
 BATTERY_PROFILE_STRUCT_P fgauge_get_profile(unsigned int temperature)
 {
-	switch (temperature) {
-	case batt_meter_cust_data.temperature_t0:
-		return &battery_profile_t0[g_fg_battery_id][0];
-		/*break;*/
-	case batt_meter_cust_data.temperature_t1:
-		return &battery_profile_t1[g_fg_battery_id][0];
-		/*break;*/
-	case batt_meter_cust_data.temperature_t2:
-		return &battery_profile_t2[g_fg_battery_id][0];
-		/*break;*/
-	case batt_meter_cust_data.temperature_t3:
-		return &battery_profile_t3[g_fg_battery_id][0];
-		/*break;*/
-	case batt_meter_cust_data.temperature_t:
-		return &battery_profile_temperature[0];
-		/*break;*/
-	default:
+	if (g_fg_battery_id == 0) {
+		if (temperature == batt_meter_cust_data.temperature_t0)
+			return &atl_battery_profile_t0[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t1)
+			return &atl_battery_profile_t1[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t2)
+			return &atl_battery_profile_t2[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t3)
+			return &atl_battery_profile_t3[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t)
+			return &atl_battery_profile_temperature[0];
+
 		return NULL;
-		/*break;*/
+	} else if (g_fg_battery_id == 1) {
+		if (temperature == batt_meter_cust_data.temperature_t0)
+			return &vk_battery_profile_t0[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t1)
+			return &vk_battery_profile_t1[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t2)
+			return &vk_battery_profile_t2[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t3)
+			return &vk_battery_profile_t3[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t)
+			return &vk_battery_profile_temperature[0];
+
+		return NULL;
+	} else if (g_fg_battery_id == 2) {
+		if (temperature == batt_meter_cust_data.temperature_t0)
+			return &sony_battery_profile_t0[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t1)
+			return &sony_battery_profile_t1[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t2)
+			return &sony_battery_profile_t2[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t3)
+			return &sony_battery_profile_t3[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t)
+			return &sony_battery_profile_temperature[0];
+
+		return NULL;
+	} else {
+		if (temperature == batt_meter_cust_data.temperature_t0)
+			return &bak_battery_profile_t0[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t1)
+			return &bak_battery_profile_t1[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t2)
+			return &bak_battery_profile_t2[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t3)
+			return &bak_battery_profile_t3[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t)
+			return &bak_battery_profile_temperature[0];
+
+		return NULL;
 	}
 }
 
 R_PROFILE_STRUCT_P fgauge_get_profile_r_table(unsigned int temperature)
 {
-	switch (temperature) {
-	case batt_meter_cust_data.temperature_t0:
-		return &r_profile_t0[g_fg_battery_id][0];
-		/*break;*/
-	case batt_meter_cust_data.temperature_t1:
-		return &r_profile_t1[g_fg_battery_id][0];
-		/*break;*/
-	case batt_meter_cust_data.temperature_t2:
-		return &r_profile_t2[g_fg_battery_id][0];
-		/*break;*/
-	case batt_meter_cust_data.temperature_t3:
-		return &r_profile_t3[g_fg_battery_id][0];
-		/*break;*/
-	case batt_meter_cust_data.temperature_t:
-		return &r_profile_temperature[0];
-		/*break;*/
-	default:
+	if (g_fg_battery_id == 0) {
+		if (temperature == batt_meter_cust_data.temperature_t0)
+			return &atl_r_profile_t0[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t1)
+			return &atl_r_profile_t1[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t2)
+			return &atl_r_profile_t2[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t3)
+			return &atl_r_profile_t3[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t)
+			return &atl_r_profile_temperature[0];
+
 		return NULL;
-		/*break;*/
+	} else if (g_fg_battery_id == 1) {
+		if (temperature == batt_meter_cust_data.temperature_t0)
+			return &vk_r_profile_t0[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t1)
+			return &vk_r_profile_t1[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t2)
+			return &vk_r_profile_t2[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t3)
+			return &vk_r_profile_t3[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t)
+			return &vk_r_profile_temperature[0];
+
+		return NULL;
+	} else if (g_fg_battery_id == 2) {
+		if (temperature == batt_meter_cust_data.temperature_t0)
+			return &sony_r_profile_t0[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t1)
+			return &sony_r_profile_t1[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t2)
+			return &sony_r_profile_t2[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t3)
+			return &sony_r_profile_t3[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t)
+			return &sony_r_profile_temperature[0];
+
+		return NULL;
+	} else {
+		if (temperature == batt_meter_cust_data.temperature_t0)
+			return &bak_r_profile_t0[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t1)
+			return &bak_r_profile_t1[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t2)
+			return &bak_r_profile_t2[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t3)
+			return &bak_r_profile_t3[0];
+
+		if (temperature == batt_meter_cust_data.temperature_t)
+			return &bak_r_profile_temperature[0];
+
+		return NULL;
 	}
 }
 #else
@@ -1960,7 +2072,9 @@ if (((g_rtc_fg_soc != 0)
 				bm_print(BM_LOG_CRTI,
 					 "[FGADC] gFG_capacity_by_v=%d, gFG_capacity_by_sw_ocv=%d use SWOCV\n",
 					 gFG_capacity_by_v, gFG_capacity_by_sw_ocv);
+#if defined(INIT_SOC_BY_SW_SOC)
 				gFG_capacity_by_v = gFG_capacity_by_sw_ocv;
+#endif
 			} else {
 				bm_print(BM_LOG_CRTI,
 					 "[FGADC] gFG_capacity_by_v=%d, gFG_capacity_by_sw_ocv=%d use HWOCV\n",

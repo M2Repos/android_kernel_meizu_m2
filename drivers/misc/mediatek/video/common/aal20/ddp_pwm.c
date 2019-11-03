@@ -387,6 +387,9 @@ int disp_bls_set_backlight(int level_1024)
  */
 static int disp_pwm_level_remap(disp_pwm_id_t id, int level_1024)
 {
+	if (level_1024 <= 10 && level_1024 > 0)
+		level_1024 = 10;
+
 	return level_1024;
 }
 

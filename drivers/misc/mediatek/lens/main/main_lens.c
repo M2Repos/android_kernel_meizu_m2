@@ -39,32 +39,12 @@
 
 #define AF_DRVNAME "MAINAF"
 
-#if defined(CONFIG_MTK_LEGACY)
-#define I2C_CONFIG_SETTING 1
-#elif defined(CONFIG_OF)
-#define I2C_CONFIG_SETTING 2 /* device tree */
-#else
-
-#define I2C_CONFIG_SETTING 1
-#endif
-
-
-#if I2C_CONFIG_SETTING == 1
-#define LENS_I2C_BUSNUM 0
-#define I2C_REGISTER_ID            0x28
-#endif
+#define I2C_CONFIG_SETTING 2
 
 #define PLATFORM_DRIVER_NAME "lens_actuator_main_af"
 #define AF_DRIVER_CLASS_NAME "actuatordrv_main_af"
 
-
-#if I2C_CONFIG_SETTING == 1
-static struct i2c_board_info kd_lens_dev __initdata = {
-	I2C_BOARD_INFO(AF_DRVNAME, I2C_REGISTER_ID)
-};
-#endif
-
-#define AF_DEBUG
+//#define AF_DEBUG
 #ifdef AF_DEBUG
 #define LOG_INF(format, args...) pr_info(AF_DRVNAME " [%s] " format, __func__, ##args)
 #else
@@ -72,31 +52,12 @@ static struct i2c_board_info kd_lens_dev __initdata = {
 #endif
 
 static struct stAF_DrvList g_stAF_DrvList[MAX_NUM_OF_LENS] = {
-	{1, AFDRV_AK7371AF, AK7371AF_SetI2Cclient, AK7371AF_Ioctl, AK7371AF_Release},
-	{1, AFDRV_BU6424AF, BU6424AF_SetI2Cclient, BU6424AF_Ioctl, BU6424AF_Release},
-	{1, AFDRV_BU6429AF, BU6429AF_SetI2Cclient, BU6429AF_Ioctl, BU6429AF_Release},
-	{1,
-		#ifdef CONFIG_MTK_LENS_BU63165AF_SUPPORT
-		AFDRV_BU63165AF, BU63165AF_SetI2Cclient, BU63165AF_Ioctl, BU63165AF_Release
-		#else
-		AFDRV_BU63169AF, BU63169AF_SetI2Cclient, BU63169AF_Ioctl, BU63169AF_Release
-		#endif
-	},
-	{1, AFDRV_DW9714AF, DW9714AF_SetI2Cclient, DW9714AF_Ioctl, DW9714AF_Release},
-	{1, AFDRV_DW9718SAF, DW9718SAF_SetI2Cclient, DW9718SAF_Ioctl, DW9718SAF_Release},
-	{1, AFDRV_DW9719TAF, DW9719TAF_SetI2Cclient, DW9719TAF_Ioctl, DW9719TAF_Release},
-	{1, AFDRV_LC898212XDAF, LC898212XDAF_SetI2Cclient, LC898212XDAF_Ioctl, LC898212XDAF_Release},
-	{1, AFDRV_LC898212XDAF_TVC700, LC898212XD_TVC700_SetI2Cclient,
-		LC898212XD_TVC700_Ioctl, LC898212XD_TVC700_Release},
-	{1, AFDRV_FM50AF, FM50AF_SetI2Cclient, FM50AF_Ioctl, FM50AF_Release},
-	{1, AFDRV_DW9814AF, DW9814AF_SetI2Cclient, DW9814AF_Ioctl, DW9814AF_Release},
-	{1, AFDRV_DW9718AF, DW9718AF_SetI2Cclient, DW9718AF_Ioctl, DW9718AF_Release},
-	{1, AFDRV_LC898212AF, LC898212AF_SetI2Cclient, LC898212AF_Ioctl, LC898212AF_Release},
-	{1, AFDRV_LC898214AF, LC898214AF_SetI2Cclient, LC898214AF_Ioctl, LC898214AF_Release},
-	{1, AFDRV_LC898217AF, LC898217AF_SetI2Cclient, LC898217AF_Ioctl, LC898217AF_Release},
-	{1, AFDRV_LC898122AF, LC898122AF_SetI2Cclient, LC898122AF_Ioctl, LC898122AF_Release},
-	{1, AFDRV_AD5820AF, AD5820AF_SetI2Cclient, AD5820AF_Ioctl, AD5820AF_Release},
-	{1, AFDRV_WV511AAF, WV511AAF_SetI2Cclient, WV511AAF_Ioctl, WV511AAF_Release},
+#ifdef CONFIG_MTK_LENS_BU6429116109AF_SUPPORT
+	{1, AFDRV_BU6429116109AF, BU6429116109AF_SetI2Cclient, BU6429116109AF_Ioctl, BU6429116109AF_Release},
+#endif
+#ifdef CONFIG_MTK_LENS_BU6429116134AF_SUPPORT
+	{1, AFDRV_BU6429116134AF, BU6429116134AF_SetI2Cclient, BU6429116134AF_Ioctl, BU6429116134AF_Release},
+#endif
 };
 
 static struct stAF_DrvList *g_pstAF_CurDrv;
@@ -113,18 +74,8 @@ static struct class *actuator_class;
 static struct device *lens_device;
 
 /* PMIC */
-#if !defined(CONFIG_MTK_LEGACY)
 static struct regulator *regVCAMAF;
 static int g_regVCAMAFEn;
-#endif
-
-void AF_PowerDown(void)
-{
-	#ifdef CONFIG_MTK_LENS_AK7371AF_SUPPORT
-	AK7371AF_SetI2Cclient(g_pstAF_I2Cclient, &g_AF_SpinLock, &g_s4AF_Opened);
-	AK7371AF_PowerDown();
-	#endif
-}
 
 static long AF_SetMotorName(__user struct stAF_MotorName *pstMotorName)
 {
@@ -152,31 +103,6 @@ static long AF_SetMotorName(__user struct stAF_MotorName *pstMotorName)
 	return i4RetValue;
 }
 
-#if 0
-static long AF_SetLensMotorName(struct stAF_MotorName stMotorName)
-{
-	long i4RetValue = -1;
-	int i;
-
-	LOG_INF("AF_SetLensMotorName - Set Motor Name : %s\n", stMotorName.uMotorName);
-
-	for (i = 0; i < MAX_NUM_OF_LENS; i++) {
-		if (g_stAF_DrvList[i].uEnable != 1)
-			break;
-
-		LOG_INF("AF_SetLensMotorName - Search Motor Name : %s\n", g_stAF_DrvList[i].uDrvName);
-		if (strcmp(stMotorName.uMotorName, g_stAF_DrvList[i].uDrvName) == 0) {
-			g_pstAF_CurDrv = &g_stAF_DrvList[i];
-			i4RetValue = g_pstAF_CurDrv->pAF_SetI2Cclient(g_pstAF_I2Cclient,
-								&g_AF_SpinLock, &g_s4AF_Opened);
-			break;
-		}
-	}
-	return i4RetValue;
-}
-#endif
-
-#if !defined(CONFIG_MTK_LEGACY)
 static void AFRegulatorCtrl(int Stage)
 {
 	if (Stage == 0) {
@@ -241,7 +167,6 @@ static void AFRegulatorCtrl(int Stage)
 		}
 	}
 }
-#endif
 
 /* ////////////////////////////////////////////////////////////// */
 static long AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, unsigned long a_u4Param)
@@ -254,18 +179,15 @@ static long AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, unsigned 
 		break;
 
 	case AFIOC_S_SETPOWERDOWN:
-		AF_PowerDown();
 		i4RetValue = 1;
 		break;
 
-	#if !defined(CONFIG_MTK_LEGACY)
 	case AFIOC_S_SETPOWERCTRL:
 		AFRegulatorCtrl(0);
 
 		if (a_u4Param > 0)
 			AFRegulatorCtrl(1);
 		break;
-	#endif
 
 	default:
 		if (g_pstAF_CurDrv)
@@ -420,20 +342,16 @@ static const struct i2c_device_id AF_i2c_id[] = { {AF_DRVNAME, 0}, {} };
 /* Compatible name must be the same with that defined in codegen.dws and cust_i2c.dtsi */
 /* TOOL : kernel-3.10\tools\dct */
 /* PATH : vendor\mediatek\proprietary\custom\#project#\kernel\dct\dct */
-#if I2C_CONFIG_SETTING == 2
 static const struct of_device_id MAINAF_of_match[] = {
 	{.compatible = "mediatek,CAMERA_MAIN_AF"},
 	{},
 };
-#endif
 
 static struct i2c_driver AF_i2c_driver = {
 	.probe = AF_i2c_probe,
 	.remove = AF_i2c_remove,
 	.driver.name = AF_DRVNAME,
-#if I2C_CONFIG_SETTING == 2
 	.driver.of_match_table = MAINAF_of_match,
-#endif
 	.id_table = AF_i2c_id,
 };
 
@@ -467,10 +385,6 @@ static int AF_i2c_probe(struct i2c_client *client, const struct i2c_device_id *i
 
 	regVCAMAF = NULL;
 	g_regVCAMAFEn = 0;
-
-#if 0 /* ndef CONFIG_MTK_LEGACY */
-	AFRegulatorCtrl(0);
-#endif
 
 	LOG_INF("Attached!!\n");
 
@@ -518,10 +432,6 @@ static struct platform_device g_stAF_device = {
 
 static int __init MAINAF_i2C_init(void)
 {
-	#if I2C_CONFIG_SETTING == 1
-	i2c_register_board_info(LENS_I2C_BUSNUM, &kd_lens_dev, 1);
-	#endif
-
 	if (platform_device_register(&g_stAF_device)) {
 		LOG_INF("failed to register AF driver\n");
 		return -ENODEV;

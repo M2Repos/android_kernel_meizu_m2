@@ -38,7 +38,8 @@
 #include <linux/i2c.h>
 #include <linux/leds.h>
 
-
+#include <mach/gpio_const.h>
+#include <mt-plat/mt_gpio.h>
 
 /******************************************************************************
  * Debug configuration
@@ -93,6 +94,14 @@ static int g_bLtVersion;
 Functions
 *****************************************************************************/
 static void work_timeOutFunc(struct work_struct *data);
+
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+extern int is_ic_sky81294(void);
+extern void SKY81294_torch_mode(int g_duty);
+extern void SKY81294_flash_mode(int g_duty);
+extern void SKY81294_shutdown_mode(void);
+extern void SKY81294_torch_set_level(int level);
+#endif
 
 static struct i2c_client *LM3642_i2c_client;
 
@@ -268,14 +277,40 @@ int readReg(int reg)
 int FL_Enable(void)
 {
 	char buf[2];
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+	int ret;
+	ret = is_ic_sky81294();
+	if(ret == 0x8129) {
+		if(g_duty <= 2) {
+			PK_DBG("FL_Enable sky81294 torch mode\n");
+			SKY81294_torch_mode(g_duty);
+		} else {
+			PK_DBG("FL_Enable sky81294 flash mode\n");
+			SKY81294_flash_mode(g_duty);
+		}
+	} else {
+#endif
 /* char bufR[2]; */
 	if (g_duty < 0)
 		g_duty = 0;
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+	else if (g_duty > 15)
+		g_duty = 15;
+#else
 	else if (g_duty > 16)
 		g_duty = 16;
+#endif
 	if (g_duty <= 2) {
 		int val;
 
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+		if (g_duty == 0)
+			val = 3;
+		else if (g_duty == 1)
+			val = 5;
+		else
+			val = 7;
+#else
 		if (g_bLtVersion == 1) {
 			if (g_duty == 0)
 				val = 3;
@@ -291,6 +326,7 @@ int FL_Enable(void)
 			else	/* if(g_duty==2) */
 				val = 3;
 		}
+#endif
 		buf[0] = 9;
 		buf[1] = val << 4;
 		/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
@@ -300,10 +336,22 @@ int FL_Enable(void)
 		buf[1] = 0x02;
 		/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
 		LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+		buf[0] = 0xa;
+		buf[1] = 0x72;
+		LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+		if(mt_set_gpio_mode(GPIO43 | 0x80000000, GPIO_MODE_00)){PK_DBG("[constant_flashlight] set gpio mode failed!\n");}
+		if(mt_set_gpio_dir(GPIO43 | 0x80000000, 1)){PK_DBG("[constant_flashlight] set gpio dir failed!\n");}
+		if(mt_set_gpio_out(GPIO43 | 0x80000000, 1)){PK_DBG("[constant_flashlight] set gpio failed!\n");}
+#endif
 	} else {
 		int val;
 
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+		val = g_duty;
+#else
 		val = (g_duty - 1);
+#endif
 		buf[0] = 9;
 		buf[1] = val;
 		/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
@@ -324,6 +372,9 @@ int FL_Enable(void)
 	readReg(0xa);
 	readReg(0xb);
 
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+}
+#endif
 	return 0;
 }
 
@@ -332,12 +383,30 @@ int FL_Enable(void)
 int FL_Disable(void)
 {
 	char buf[2];
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+	int ret;
 
+	if(mt_set_gpio_mode(GPIO43 | 0x80000000, GPIO_MODE_00)){PK_DBG("[constant_flashlight] set gpio mode failed!\n");}
+	if(mt_set_gpio_dir(GPIO43 | 0x80000000, 1)){PK_DBG("[constant_flashlight] set gpio dir failed!\n");}
+	if(mt_set_gpio_out(GPIO43 | 0x80000000, 0)){PK_DBG("[constant_flashlight] set gpio failed!\n");}
+	buf[0] = 0xa;
+#else
 /* ///////////////////// */
 	buf[0] = 10;
+#endif
 	buf[1] = 0x00;
 	/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
 	LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+	ret = is_ic_sky81294();
+	if(ret == 0x8129) {
+		SKY81294_shutdown_mode();
+	} else {
+		buf[0] = 10;
+		buf[1] = 0x00;
+		LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+	}
+#endif
 	PK_DBG(" FL_Disable line=%d\n", __LINE__);
 	return 0;
 }
@@ -354,9 +423,17 @@ int FL_dim_duty(kal_uint32 duty)
 
 int FL_Init(void)
 {
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+	int regVal0, ret;
+#else
 	int regVal0;
+#endif
 	char buf[2];
 
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+	ret = is_ic_sky81294();
+	if(ret != 0x8129) {
+#endif
 	buf[0] = 0xa;
 	buf[1] = 0x0;
 	/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
@@ -400,6 +477,9 @@ int FL_Init(void)
 
 
 
+#ifdef CONFIG_MTK_SKY81294_FLASHLIGHT
+	}
+#endif
 
 /*	PK_DBG(" FL_Init line=%d\n", __LINE__); */
 	return 0;
