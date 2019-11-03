@@ -16,6 +16,12 @@ config MTK_SKY81294_FLASHLIGHT
 	help
 	  SKY81294 flashlight driver.
 
+config MTK_TORCH_SYSFS
+	bool "MTK_TORCH_SYSFS"
+	default n
+	help
+	  SysFS flashlight control interface.
+
 config MTK_FLASHLIGHT_USE_MODULE
 	bool "Mediatek flashlight driver build as module"
 	default n

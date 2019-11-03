@@ -15,6 +15,8 @@
 # Makefile for misc devices that really don't fit anywhere else.
 #
 
+obj-$(CONFIG_MTK_TORCH_SYSFS) += torch_sysfs.o
+
 ifneq ($(CONFIG_MTK_FLASHLIGHT_USE_MODULE), y)
 obj-y				+= kd_flashlightlist.o
 obj-y				+= strobe_main_sid2_part2.o
