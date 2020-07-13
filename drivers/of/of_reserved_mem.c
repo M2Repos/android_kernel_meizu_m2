@@ -20,10 +20,28 @@
 #include <linux/mm.h>
 #include <linux/sizes.h>
 #include <linux/of_reserved_mem.h>
+#include <mt-plat/mtk_memcfg.h>
 
-#define MAX_RESERVED_REGIONS	16
+#define MAX_RESERVED_REGIONS    40
 static struct reserved_mem reserved_mem[MAX_RESERVED_REGIONS];
 static int reserved_mem_count;
+
+#ifdef CONFIG_MTK_MEMCFG
+int get_reserved_mem_count(void)
+{
+	return reserved_mem_count;
+}
+
+struct reserved_mem get_reserved_mem(int num)
+{
+	if (num >= MAX_RESERVED_REGIONS)
+		BUG();
+	return reserved_mem[num];
+}
+#else
+#define get_reserved_mem_count() do {} while (0)
+#define get_reserved_mem(num) do {} while (0)
+#endif
 
 #if defined(CONFIG_HAVE_MEMBLOCK)
 #include <linux/memblock.h>
@@ -168,6 +186,17 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 
 	*res_base = base;
 	*res_size = size;
+
+	if (nomap) {
+		mtk_memcfg_write_memory_layout_info(MTK_MEMCFG_MEMBLOCK_PHY,
+				uname, base, size);
+		MTK_MEMCFG_LOG_AND_PRINTK(
+			"[PHY layout]%s   :   0x%08llx - 0x%08llx (0x%llx)\n",
+			uname,
+			(unsigned long long)base,
+			(unsigned long long)base + size - 1,
+			(unsigned long long)size);
+	}
 
 	return 0;
 }

@@ -14,6 +14,16 @@
 
 #include "sched.h"
 
+/**
+ * sched_idle_set_state - Record idle state for the current CPU.
+ * @idle_state: State to record.
+ */
+void sched_idle_set_state(struct cpuidle_state *idle_state, int index)
+{
+	idle_set_state(this_rq(), idle_state);
+	idle_set_state_idx(this_rq(), index);
+}
+
 static int __read_mostly cpu_idle_force_poll;
 
 void cpu_idle_poll_ctrl(bool enable)
@@ -79,7 +89,6 @@ static void cpuidle_idle_call(void)
 	struct cpuidle_device *dev = __this_cpu_read(cpuidle_devices);
 	struct cpuidle_driver *drv = cpuidle_get_cpu_driver(dev);
 	int next_state, entered_state;
-	unsigned int broadcast;
 
 	/*
 	 * Check if the idle task must be rescheduled. If it is the
@@ -108,20 +117,8 @@ static void cpuidle_idle_call(void)
 	 * Fall back to the default arch idle method on errors.
 	 */
 	next_state = cpuidle_select(drv, dev);
-	if (next_state < 0) {
-use_default:
-		/*
-		 * We can't use the cpuidle framework, let's use the default
-		 * idle routine.
-		 */
-		if (current_clr_polling_and_test())
-			local_irq_enable();
-		else
-			arch_cpu_idle();
-
-		goto exit_idle;
-	}
-
+	if (next_state < 0)
+		goto use_default;
 
 	/*
 	 * The idle task must be scheduled, it is pointless to
@@ -134,18 +131,6 @@ use_default:
 		local_irq_enable();
 		goto exit_idle;
 	}
-
-	broadcast = drv->states[next_state].flags & CPUIDLE_FLAG_TIMER_STOP;
-
-	/*
-	 * Tell the time framework to switch to a broadcast timer
-	 * because our local timer will be shutdown. If a local timer
-	 * is used from another cpu as a broadcast timer, this call may
-	 * fail if it is not available
-	 */
-	if (broadcast &&
-	    clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_ENTER, &dev->cpu))
-		goto use_default;
 
 	/* Take note of the planned idle state. */
 	idle_set_state(this_rq(), &drv->states[next_state]);
@@ -160,8 +145,8 @@ use_default:
 	/* The cpu is no longer idle or about to enter idle. */
 	idle_set_state(this_rq(), NULL);
 
-	if (broadcast)
-		clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &dev->cpu);
+	if (entered_state == -EBUSY)
+		goto use_default;
 
 	/*
 	 * Give the governor an opportunity to reflect on the outcome
@@ -179,6 +164,19 @@ exit_idle:
 
 	rcu_idle_exit();
 	start_critical_timings();
+	return;
+
+use_default:
+	/*
+	 * We can't use the cpuidle framework, let's use the default
+	 * idle routine.
+	 */
+	if (current_clr_polling_and_test())
+		local_irq_enable();
+	else
+		arch_cpu_idle();
+
+	goto exit_idle;
 }
 
 /*
@@ -199,14 +197,17 @@ static void cpu_idle_loop(void)
 		 */
 
 		__current_set_polling();
+		quiet_vmstat();
 		tick_nohz_idle_enter();
 
 		while (!need_resched()) {
 			check_pgt_cache();
 			rmb();
 
-			if (cpu_is_offline(smp_processor_id()))
+			if (cpu_is_offline(smp_processor_id())) {
+				tick_set_cpu_plugoff_flag(1);
 				arch_cpu_idle_dead();
+			}
 
 			local_irq_disable();
 			arch_cpu_idle_enter();

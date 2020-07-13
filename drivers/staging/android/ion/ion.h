@@ -28,10 +28,12 @@ struct ion_mapper;
 struct ion_client;
 struct ion_buffer;
 
-/* This should be removed some day when phys_addr_t's are fully
-   plumbed in the kernel, and all instances of ion_phys_addr_t should
-   be converted to phys_addr_t.  For the time being many kernel interfaces
-   do not accept phys_addr_t's that would have to */
+/*
+ * This should be removed some day when phys_addr_t's are fully
+ * plumbed in the kernel, and all instances of ion_phys_addr_t should
+ * be converted to phys_addr_t.  For the time being many kernel interfaces
+ * do not accept phys_addr_t's that would have to
+ */
 #define ion_phys_addr_t unsigned long
 
 /**
@@ -76,7 +78,7 @@ struct ion_platform_data {
  *		size
  *
  * Calls memblock reserve to set aside memory for heaps that are
- * located at specific memory addresses or of specfic sizes not
+ * located at specific memory addresses or of specific sizes not
  * managed by the kernel
  */
 void ion_reserve(struct ion_platform_data *data);

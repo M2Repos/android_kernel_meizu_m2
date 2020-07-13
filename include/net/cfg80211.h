@@ -1465,6 +1465,8 @@ struct cfg80211_match_set {
  * @channels: channels to scan
  * @min_rssi_thold: for drivers only supporting a single threshold, this
  *	contains the minimum over all matchsets
+ * @owner_nlportid: netlink portid of owner (if this should is a request
+ *	owned by a particular socket)
  */
 struct cfg80211_sched_scan_request {
 	struct cfg80211_ssid *ssids;
@@ -1483,6 +1485,7 @@ struct cfg80211_sched_scan_request {
 	struct wiphy *wiphy;
 	struct net_device *dev;
 	unsigned long scan_start;
+	u32 owner_nlportid;
 
 	/* keep last */
 	struct ieee80211_channel *channels[0];
@@ -2174,6 +2177,8 @@ struct cfg80211_qos_map {
  *	the driver, and will be valid until passed to cfg80211_scan_done().
  *	For scan results, call cfg80211_inform_bss(); you can call this outside
  *	the scan/scan_done bracket too.
+ * @abort_scan: Tell the driver to abort an ongoing scan. The driver shall
+ *	indicate the status of the scan through cfg80211_scan_done().
  *
  * @auth: Request to authenticate with the specified peer
  *	(invoked with the wireless_dev mutex held)
@@ -2422,6 +2427,7 @@ struct cfg80211_ops {
 
 	int	(*scan)(struct wiphy *wiphy,
 			struct cfg80211_scan_request *request);
+	void	(*abort_scan)(struct wiphy *wiphy, struct wireless_dev *wdev);
 
 	int	(*auth)(struct wiphy *wiphy, struct net_device *dev,
 			struct cfg80211_auth_request *req);
@@ -3166,6 +3172,23 @@ static inline const char *wiphy_name(const struct wiphy *wiphy)
 }
 
 /**
+ * wiphy_new_nm - create a new wiphy for use with cfg80211
+ *
+ * @ops: The configuration operations for this device
+ * @sizeof_priv: The size of the private area to allocate
+ * @requested_name: Request a particular name.
+ *	NULL is valid value, and means use the default phy%d naming.
+ *
+ * Create a new wiphy and associate the given operations with it.
+ * @sizeof_priv bytes are allocated for private use.
+ *
+ * Return: A pointer to the new wiphy. This pointer must be
+ * assigned to each netdev's ieee80211_ptr for proper operation.
+ */
+struct wiphy *wiphy_new_nm(const struct cfg80211_ops *ops, int sizeof_priv,
+			   const char *requested_name);
+
+/**
  * wiphy_new - create a new wiphy for use with cfg80211
  *
  * @ops: The configuration operations for this device
@@ -3177,7 +3200,11 @@ static inline const char *wiphy_name(const struct wiphy *wiphy)
  * Return: A pointer to the new wiphy. This pointer must be
  * assigned to each netdev's ieee80211_ptr for proper operation.
  */
-struct wiphy *wiphy_new(const struct cfg80211_ops *ops, int sizeof_priv);
+static inline struct wiphy *wiphy_new(const struct cfg80211_ops *ops,
+				      int sizeof_priv)
+{
+	return wiphy_new_nm(ops, sizeof_priv, NULL);
+}
 
 /**
  * wiphy_register - register a wiphy with cfg80211

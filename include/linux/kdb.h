@@ -84,6 +84,8 @@ extern const char *kdb_diemsg;
 
 extern int kdb_flags;	/* Global flags, see kdb_state for per cpu state */
 
+DECLARE_PER_CPU(int, kdb_in_use);	/* Indicate if in kdb mode or not */
+
 extern void kdb_save_flags(void);
 extern void kdb_restore_flags(void);
 
@@ -127,7 +129,7 @@ extern int kdb_get_kbd_char(void);
 static inline
 int kdb_process_cpu(const struct task_struct *p)
 {
-	unsigned int cpu = task_thread_info(p)->cpu;
+	unsigned int cpu = task_cpu(p);
 	if (cpu > num_possible_cpus())
 		cpu = 0;
 	return cpu;

@@ -695,6 +695,8 @@ static int data_ep_set_params(struct snd_usb_endpoint *ep,
 		max_urbs = min((unsigned) MAX_URBS,
 				MAX_QUEUE * packs_per_ms / urb_packs);
 		ep->nurbs = min(max_urbs, urbs_per_period * periods_per_buffer);
+		if (ep->nurbs < 2)
+			ep->nurbs++;
 	}
 
 	/* allocate and initialize data urbs */

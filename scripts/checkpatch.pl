@@ -7,6 +7,7 @@
 
 use strict;
 use POSIX;
+use File::Basename;
 
 my $P = $0;
 $P =~ s@(.*)/@@g;
@@ -2162,6 +2163,7 @@ sub process {
 
 # Check for improperly formed commit descriptions
 		if ($in_commit_log &&
+		    $line !~ /^This reverts commit [0-9a-f]{7,40}/ &&
 		    $line =~ /\bcommit\s+[0-9a-f]{5,}/i &&
 		    !($line =~ /\b[Cc]ommit [0-9a-f]{12,40} \("/ ||
 		      ($line =~ /\b[Cc]ommit [0-9a-f]{12,40}\s*$/ &&
@@ -4100,6 +4102,17 @@ sub process {
 					WARN("INCLUDE_LINUX",
 					     "Use #include <linux/$file> instead of <asm/$file>\n" . $herecurr);
 				}
+			}
+		}
+
+# warn if <foo.h> is #included but foo.h is available in current directory
+		if ($tree && $rawline =~ m{^.\s*\#\s*include\s*\<(.*)\.h\>}) {
+			my $file = "$1.h";
+			my $realpath = dirname($realfile);
+			my $checkfile = "$realpath/$file";
+			if (-f "$root/$checkfile") {
+				WARN("SUSPECT_SYSTEM_INCLUDE",
+					"Use #include \"$file\" instead of <$file>\n" . $herecurr);
 			}
 		}
 

@@ -198,6 +198,8 @@ static inline void suspend_test_finish(const char *label) {}
 
 #ifdef CONFIG_PM_SLEEP
 /* kernel/power/main.c */
+extern int __pm_notifier_call_chain(unsigned long val, int nr_to_call,
+				    int *nr_calls);
 extern int pm_notifier_call_chain(unsigned long val);
 #endif
 
@@ -266,6 +268,31 @@ static inline void suspend_thaw_processes(void)
 {
 }
 #endif
+
+extern struct page *saveable_page(struct zone *z, unsigned long p);
+#ifdef CONFIG_HIGHMEM
+extern struct page *saveable_highmem_page(struct zone *z, unsigned long p);
+#else
+static
+inline struct page *saveable_highmem_page(struct zone *z, unsigned long p)
+{
+	return NULL;
+}
+#endif
+
+#define PBES_PER_PAGE (PAGE_SIZE / sizeof(struct pbe))
+extern struct list_head nosave_regions;
+
+/**
+ *	This structure represents a range of page frames the contents of which
+ *	should not be saved during the suspend.
+ */
+
+struct nosave_region {
+	struct list_head list;
+	unsigned long start_pfn;
+	unsigned long end_pfn;
+};
 
 #ifdef CONFIG_PM_AUTOSLEEP
 

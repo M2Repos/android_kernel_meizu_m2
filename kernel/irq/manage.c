@@ -183,7 +183,12 @@ int irq_do_set_affinity(struct irq_data *data, const struct cpumask *mask,
 	ret = chip->irq_set_affinity(data, mask, force);
 	switch (ret) {
 	case IRQ_SET_MASK_OK:
+	case IRQ_SET_MASK_OK_DONE:
+#ifdef CONFIG_MTK_IRQ_NEW_DESIGN
+		update_affinity_settings(desc, mask, true);
+#else
 		cpumask_copy(data->affinity, mask);
+#endif
 	case IRQ_SET_MASK_OK_NOCOPY:
 		irq_set_thread_affinity(desc);
 		ret = 0;
@@ -348,7 +353,12 @@ setup_affinity(unsigned int irq, struct irq_desc *desc, struct cpumask *mask)
 		if (cpumask_intersects(mask, nodemask))
 			cpumask_and(mask, mask, nodemask);
 	}
+
+#ifndef CONFIG_MTK_IRQ_NEW_DESIGN
 	irq_do_set_affinity(&desc->irq_data, mask, false);
+#else
+	irq_do_set_affinity(&desc->irq_data, cpu_possible_mask, true);
+#endif
 	return 0;
 }
 #else
@@ -600,6 +610,7 @@ int __irq_set_trigger(struct irq_desc *desc, unsigned int irq,
 
 	switch (ret) {
 	case IRQ_SET_MASK_OK:
+	case IRQ_SET_MASK_OK_DONE:
 		irqd_clear(&desc->irq_data, IRQD_TRIGGER_MASK);
 		irqd_set(&desc->irq_data, flags);
 
@@ -1188,7 +1199,6 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 
 		/* Set default affinity mask once everything is setup */
 		setup_affinity(irq, desc, mask);
-
 	} else if (new->flags & IRQF_TRIGGER_MASK) {
 		unsigned int nmsk = new->flags & IRQF_TRIGGER_MASK;
 		unsigned int omsk = irq_settings_get_trigger_mask(desc);
@@ -1606,6 +1616,19 @@ void disable_percpu_irq(unsigned int irq)
 	irq_put_desc_unlock(desc, flags);
 }
 EXPORT_SYMBOL_GPL(disable_percpu_irq);
+
+void _disable_percpu_irq(unsigned int irq, unsigned int cpu)
+{
+	unsigned long flags;
+	struct irq_desc *desc = irq_get_desc_lock(irq, &flags,
+					IRQ_GET_DESC_CHECK_PERCPU);
+	if (!desc)
+		return;
+
+	irq_percpu_disable(desc, cpu);
+	irq_put_desc_unlock(desc, flags);
+}
+EXPORT_SYMBOL_GPL(_disable_percpu_irq);
 
 /*
  * Internal function to unregister a percpu irqaction.

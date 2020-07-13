@@ -44,6 +44,13 @@ static DEFINE_PER_CPU(struct pagevec, lru_add_pvec);
 static DEFINE_PER_CPU(struct pagevec, lru_rotate_pvecs);
 static DEFINE_PER_CPU(struct pagevec, lru_deactivate_file_pvecs);
 
+#ifdef CONFIG_ZNDSWAP
+int dt_swapcache;
+int dt_writeback;
+int dt_filecache;
+int dt_watermark;
+#endif
+
 /*
  * This path almost never happens for VM activity - pages are normally
  * freed via pagevecs.  But it gets used by networking.
@@ -1119,15 +1126,25 @@ unsigned pagevec_lookup(struct pagevec *pvec, struct address_space *mapping,
 }
 EXPORT_SYMBOL(pagevec_lookup);
 
-unsigned pagevec_lookup_tag(struct pagevec *pvec, struct address_space *mapping,
-		pgoff_t *index, int tag, unsigned nr_pages)
+unsigned pagevec_lookup_range_tag(struct pagevec *pvec,
+		struct address_space *mapping, pgoff_t *index, pgoff_t end,
+		int tag)
 {
-	pvec->nr = find_get_pages_tag(mapping, index, tag,
-					nr_pages, pvec->pages);
+	pvec->nr = find_get_pages_range_tag(mapping, index, end, tag,
+					PAGEVEC_SIZE, pvec->pages);
 	return pagevec_count(pvec);
 }
-EXPORT_SYMBOL(pagevec_lookup_tag);
+EXPORT_SYMBOL(pagevec_lookup_range_tag);
 
+unsigned pagevec_lookup_range_nr_tag(struct pagevec *pvec,
+		struct address_space *mapping, pgoff_t *index, pgoff_t end,
+		int tag, unsigned max_pages)
+{
+	pvec->nr = find_get_pages_range_tag(mapping, index, end, tag,
+		min_t(unsigned int, max_pages, PAGEVEC_SIZE), pvec->pages);
+	return pagevec_count(pvec);
+}
+EXPORT_SYMBOL(pagevec_lookup_range_nr_tag);
 /*
  * Perform any setup for the swap system
  */
@@ -1154,4 +1171,11 @@ void __init swap_setup(void)
 	 * Right now other parts of the system means that we
 	 * _really_ don't want to cluster much more
 	 */
+
+#ifdef CONFIG_ZNDSWAP
+	dt_swapcache = 2560;	/* 10MB */
+	dt_writeback = 1024;	/* 4MB */
+	dt_filecache = (int)totalram_pages;
+	dt_watermark = (int)low_wmark_pages(NODE_DATA(0)->node_zones);
+#endif
 }

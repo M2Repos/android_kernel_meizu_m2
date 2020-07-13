@@ -7,6 +7,60 @@
 #include <linux/lockdep.h>
 #include <linux/tracepoint.h>
 
+#ifdef CONFIG_DEBUG_MUTEXES
+TRACE_EVENT(mutex_contended,
+
+	TP_PROTO(struct mutex *lock, unsigned long ip),
+
+	TP_ARGS(lock, ip),
+
+	TP_STRUCT__entry(
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+		__string(name, lock->dep_map.name)
+#endif
+		__field(void *, lockdep_addr)
+	),
+
+	TP_fast_assign(
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+		__assign_str(name, lock->dep_map.name);
+#endif
+		__entry->lockdep_addr = lock;
+	),
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+	TP_printk("%p %s",  __entry->lockdep_addr, __get_str(name))
+#else
+	TP_printk("%p",  __entry->lockdep_addr)
+#endif
+
+);
+
+TRACE_EVENT(mutex_acquired,
+
+	TP_PROTO(struct mutex *lock, unsigned long ip),
+
+	TP_ARGS(lock, ip),
+
+	TP_STRUCT__entry(
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+		__string(name, lock->dep_map.name);
+#endif
+		__field(void *, lockdep_addr)
+	),
+
+	TP_fast_assign(
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+		__assign_str(name, lock->dep_map.name);
+#endif
+		__entry->lockdep_addr = lock;
+	),
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+	TP_printk("%p %s",  __entry->lockdep_addr, __get_str(name))
+#else
+	TP_printk("%p",  __entry->lockdep_addr)
+#endif
+);
+#endif
 #ifdef CONFIG_LOCKDEP
 
 TRACE_EVENT(lock_acquire,

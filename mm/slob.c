@@ -64,6 +64,7 @@
 #include <linux/cache.h>
 #include <linux/init.h>
 #include <linux/export.h>
+#include <linux/proc_fs.h>
 #include <linux/rcupdate.h>
 #include <linux/list.h>
 #include <linux/kmemleak.h>
@@ -95,12 +96,18 @@ typedef struct slob_block slob_t;
 /*
  * All partially free slob pages go on these lists.
  */
-#define SLOB_BREAK1 256
-#define SLOB_BREAK2 1024
-static LIST_HEAD(free_slob_small);
-static LIST_HEAD(free_slob_medium);
-static LIST_HEAD(free_slob_large);
+#define NR_OF_FREE_LISTS 129
+#define BUCKET_SIZE 8
+static struct list_head free_slobs[NR_OF_FREE_LISTS];
 
+static inline struct list_head *get_slob_free_list(size_t size)
+{
+	size = size / BUCKET_SIZE;
+	if (size < NR_OF_FREE_LISTS) {
+		return &free_slobs[size];
+	}
+	return &free_slobs[NR_OF_FREE_LISTS - 1];
+}
 /*
  * slob_page_free: true for pages on free_slob_pages list.
  */
@@ -273,12 +280,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 	slob_t *b = NULL;
 	unsigned long flags;
 
-	if (size < SLOB_BREAK1)
-		slob_list = &free_slob_small;
-	else if (size < SLOB_BREAK2)
-		slob_list = &free_slob_medium;
-	else
-		slob_list = &free_slob_large;
+	slob_list = get_slob_free_list(size);
 
 	spin_lock_irqsave(&slob_lock, flags);
 	/* Iterate through each partially free page, try to find room */
@@ -318,6 +320,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 			return NULL;
 		sp = virt_to_page(b);
 		__SetPageSlab(sp);
+		inc_zone_page_state(sp, NR_SLAB_UNRECLAIMABLE);
 
 		spin_lock_irqsave(&slob_lock, flags);
 		sp->units = SLOB_UNITS(PAGE_SIZE);
@@ -360,6 +363,7 @@ static void slob_free(void *block, int size)
 			clear_slob_page_free(sp);
 		spin_unlock_irqrestore(&slob_lock, flags);
 		__ClearPageSlab(sp);
+		dec_zone_page_state(sp, NR_SLAB_UNRECLAIMABLE);
 		page_mapcount_reset(sp);
 		slob_free_pages(b, 0);
 		return;
@@ -372,12 +376,7 @@ static void slob_free(void *block, int size)
 		set_slob(b, units,
 			(void *)((unsigned long)(b +
 					SLOB_UNITS(PAGE_SIZE)) & PAGE_MASK));
-		if (size < SLOB_BREAK1)
-			slob_list = &free_slob_small;
-		else if (size < SLOB_BREAK2)
-			slob_list = &free_slob_medium;
-		else
-			slob_list = &free_slob_large;
+		slob_list = get_slob_free_list(size);
 		set_slob_page_free(sp, slob_list);
 		goto out;
 	}
@@ -630,8 +629,90 @@ struct kmem_cache kmem_cache_boot = {
 	.align = ARCH_KMALLOC_MINALIGN,
 };
 
+static void show_slobinfo(struct list_head *slob_list, struct seq_file *m,
+			  int bucket_min_size, int *total_pages,
+			  long long int *total_memory,
+			  long long int *total_free, long long int *total_frag)
+{
+	struct page *sp;
+	unsigned long flags;
+	slob_t *cur;
+	int list_size = 0;
+	long long int free_memory = 0;
+	long long int frag_memory = 0;
+	long long int memory_usage = 0;
+
+	spin_lock_irqsave(&slob_lock, flags);
+	list_for_each_entry(sp, slob_list, lru) {
+		list_size++;
+		memory_usage += PAGE_SIZE;
+		free_memory += sp->units * SLOB_UNIT;
+		for (cur = sp->freelist; !slob_last(cur);
+		     cur = slob_next(cur)) {
+			int avail = slob_units(cur) * SLOB_UNIT;
+			if (bucket_min_size > avail) {
+				frag_memory += avail;
+			}
+		}
+	}
+
+	*total_pages += list_size;
+	*total_memory += memory_usage;
+	*total_free += free_memory;
+	*total_frag += frag_memory;
+	spin_unlock_irqrestore(&slob_lock, flags);
+	seq_printf(m, "%5d:%6d %-10lld %-10lld %-10lld\n",  list_size,
+		   bucket_min_size, memory_usage >> 10,
+		   free_memory >> 10, frag_memory >> 10);
+}
+
+static int slobinfo_proc_show(struct seq_file *m, void *v)
+{
+	int i;
+	int total_nr_pages = 0;
+	long long int total_free_mem = 0;
+	long long int total_frag_mem = 0;
+	long long int total_mem = 0;
+
+	seq_printf(m, "%5s:%6s %-10s %-10s %-10s\n", "pages", "bucket",
+		   "size (kb)", "free (kb)", "fragmented (kb)");
+	for (i = 0; i < NR_OF_FREE_LISTS; i++) {
+		show_slobinfo(&free_slobs[i], m, i * BUCKET_SIZE,
+			      &total_nr_pages, &total_mem,
+			      &total_free_mem, &total_frag_mem);
+	}
+
+	seq_printf(m, "\nTotal\n%12d %-10lld %-10lld %-10lld\n",
+		   total_nr_pages, total_mem >> 10,
+		   total_free_mem >> 10, total_frag_mem >> 10);
+	return 0;
+}
+
+static int slobinfo_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, slobinfo_proc_show, NULL);
+}
+
+static const struct file_operations slobinfo_proc_fops = {
+	.open           = slobinfo_proc_open,
+	.read           = seq_read,
+	.llseek         = seq_lseek,
+	.release        = single_release,
+};
+
+static int __init slob_proc_init(void)
+{
+	proc_create("slobinfo", 0, NULL, &slobinfo_proc_fops);
+	return 0;
+}
+module_init(slob_proc_init);
+
 void __init kmem_cache_init(void)
 {
+	int i;
+	for (i = 0; i < NR_OF_FREE_LISTS; i++) {
+		INIT_LIST_HEAD(&free_slobs[i]);
+	}
 	kmem_cache = &kmem_cache_boot;
 	slab_state = UP;
 }

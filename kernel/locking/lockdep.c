@@ -25,6 +25,8 @@
  * Thanks to Arjan van de Ven for coming up with the initial idea of
  * mapping lock dependencies runtime.
  */
+#define pr_fmt(fmt)	"lockdep: " fmt
+
 #define DISABLE_BRANCH_PROFILING
 #include <linux/mutex.h>
 #include <linux/sched.h>
@@ -45,10 +47,16 @@
 #include <linux/bitops.h>
 #include <linux/gfp.h>
 #include <linux/kmemcheck.h>
+#include <linux/printk.h>
+#include <mt-plat/aee.h>
 
 #include <asm/sections.h>
 
 #include "lockdep_internals.h"
+
+#ifdef MTK_LOCK_DEBUG
+#include "sched.h"
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/lock.h>
@@ -67,6 +75,29 @@ module_param(lock_stat, int, 0644);
 #define lock_stat 0
 #endif
 
+
+static void lockdep_aee(void)
+{
+#ifdef MTK_LOCK_DEBUG
+	char aee_str[40];
+	int cpu;
+	struct rq *rq;
+
+	cpu = raw_smp_processor_id();
+	rq = cpu_rq(cpu);
+
+	if (!raw_spin_is_locked(&rq->lock)) {
+		snprintf(aee_str, 40, "[%s]LockProve Warning", current->comm);
+		#if defined(CONFIG_MTK_AEE_FEATURE)
+		aee_kernel_warning_api(__FILE__, __LINE__,
+			DB_OPT_DUMMY_DUMP | DB_OPT_FTRACE,
+			aee_str, "LockProve Debug\n");
+		#endif
+	}
+#else
+	return;
+#endif
+}
 /*
  * lockdep_lock: protects the lockdep graph, the hashes and the
  *               class/list/hash allocators.
@@ -418,6 +449,7 @@ static int save_trace(struct stack_trace *trace)
 		if (!debug_locks_off_graph_unlock())
 			return 0;
 
+		lockdep_aee();
 		print_lockdep_off("BUG: MAX_STACK_TRACE_ENTRIES too low!");
 		dump_stack();
 
@@ -551,9 +583,17 @@ static void print_lockdep_cache(struct lockdep_map *lock)
 
 static void print_lock(struct held_lock *hlock)
 {
-	print_lock_name(hlock_class(hlock));
-	printk(", at: ");
-	print_ip_sym(hlock->acquire_ip);
+	struct lock_class *lock = hlock_class(hlock);
+
+	if (lock != NULL) {
+		pr_emerg("[%p]", lock->key);
+		print_lock_name(lock);
+		pr_emerg(", at: ");
+		print_ip_sym(hlock->acquire_ip);
+#ifdef CONFIG_LOCK_STAT
+		pr_emerg("hold time: %lld.\n", hlock->holdtime_stamp);
+#endif
+	}
 }
 
 static void lockdep_print_held_locks(struct task_struct *curr)
@@ -564,8 +604,10 @@ static void lockdep_print_held_locks(struct task_struct *curr)
 		printk("no locks held by %s/%d.\n", curr->comm, task_pid_nr(curr));
 		return;
 	}
-	printk("%d lock%s held by %s/%d:\n",
-		depth, depth > 1 ? "s" : "", curr->comm, task_pid_nr(curr));
+	if (curr->state == TASK_RUNNING)
+		pr_emerg("[Caution!] %s/%d is runable state\n", curr->comm, curr->pid);
+	pr_emerg("%d lock%s held by %s/%d tid:%d:\n",
+		depth, depth > 1 ? "s" : "", curr->comm, task_pid_nr(curr), task_tgid_nr(curr));
 
 	for (i = 0; i < depth; i++) {
 		printk(" #%d: ", i);
@@ -843,6 +885,7 @@ static struct lock_list *alloc_list_entry(void)
 		if (!debug_locks_off_graph_unlock())
 			return NULL;
 
+		lockdep_aee();
 		print_lockdep_off("BUG: MAX_LOCKDEP_ENTRIES too low!");
 		dump_stack();
 		return NULL;
@@ -1153,6 +1196,9 @@ print_circular_bug_header(struct lock_list *entry, unsigned int depth,
 
 	if (debug_locks_silent)
 		return 0;
+
+	/* Add by Mtk */
+	lockdep_aee();
 
 	printk("\n");
 	printk("======================================================\n");
@@ -1492,6 +1538,9 @@ print_bad_irq_dependency(struct task_struct *curr,
 	if (!debug_locks_off_graph_unlock() || debug_locks_silent)
 		return 0;
 
+	/* Add by Mtk */
+	lockdep_aee();
+
 	printk("\n");
 	printk("======================================================\n");
 	printk("[ INFO: %s-safe -> %s-unsafe lock order detected ]\n",
@@ -1721,6 +1770,9 @@ print_deadlock_bug(struct task_struct *curr, struct held_lock *prev,
 {
 	if (!debug_locks_off_graph_unlock() || debug_locks_silent)
 		return 0;
+
+	/* Add by Mtk */
+	lockdep_aee();
 
 	printk("\n");
 	printk("=============================================\n");
@@ -2226,6 +2278,9 @@ print_usage_bug(struct task_struct *curr, struct held_lock *this,
 	if (!debug_locks_off_graph_unlock() || debug_locks_silent)
 		return 0;
 
+	/* Add by Mtk */
+	lockdep_aee();
+
 	printk("\n");
 	printk("=================================\n");
 	printk("[ INFO: inconsistent lock state ]\n");
@@ -2290,6 +2345,9 @@ print_irq_inversion_bug(struct task_struct *curr,
 
 	if (!debug_locks_off_graph_unlock() || debug_locks_silent)
 		return 0;
+
+	/* Add by Mtk */
+	lockdep_aee();
 
 	printk("\n");
 	printk("=========================================================\n");
@@ -3014,6 +3072,9 @@ print_lock_nested_lock_not_held(struct task_struct *curr,
 	if (debug_locks_silent)
 		return 0;
 
+	/* Add by Mtk */
+	lockdep_aee();
+
 	printk("\n");
 	printk("==================================\n");
 	printk("[ BUG: Nested lock was not taken ]\n");
@@ -3225,6 +3286,9 @@ print_unlock_imbalance_bug(struct task_struct *curr, struct lockdep_map *lock,
 		return 0;
 	if (debug_locks_silent)
 		return 0;
+
+	/* Add by Mtk */
+	lockdep_aee();
 
 	printk("\n");
 	printk("=====================================\n");
@@ -3671,6 +3735,9 @@ print_lock_contention_bug(struct task_struct *curr, struct lockdep_map *lock,
 	if (debug_locks_silent)
 		return 0;
 
+	/* Add by Mtk */
+	lockdep_aee();
+
 	printk("\n");
 	printk("=================================\n");
 	printk("[ BUG: bad contention detected! ]\n");
@@ -4047,6 +4114,9 @@ print_freed_lock_bug(struct task_struct *curr, const void *mem_from,
 	if (debug_locks_silent)
 		return;
 
+	/* Add by Mtk */
+	lockdep_aee();
+
 	printk("\n");
 	printk("=========================\n");
 	printk("[ BUG: held lock freed! ]\n");
@@ -4104,6 +4174,9 @@ static void print_held_locks_bug(void)
 		return;
 	if (debug_locks_silent)
 		return;
+
+	/* Add by Mtk */
+	lockdep_aee();
 
 	printk("\n");
 	printk("=====================================\n");
@@ -4165,8 +4238,10 @@ retry:
 		 * if it's not sleeping (or if it's not the current
 		 * task):
 		 */
-		if (p->state == TASK_RUNNING && p != current)
+		if (p->state == TASK_RUNNING && p != current) {
+			pr_emerg("[Caution!] %s/%d is running now\n", p->comm, p->pid);
 			continue;
+		}
 		if (p->lockdep_depth)
 			lockdep_print_held_locks(p);
 		if (!unlock)
@@ -4204,6 +4279,10 @@ asmlinkage __visible void lockdep_sys_exit(void)
 	if (unlikely(curr->lockdep_depth)) {
 		if (!debug_locks_off())
 			return;
+
+		/* Add by Mtk */
+		lockdep_aee();
+
 		printk("\n");
 		printk("================================================\n");
 		printk("[ BUG: lock held when returning to user space! ]\n");
@@ -4224,6 +4303,10 @@ void lockdep_rcu_suspicious(const char *file, const int line, const char *s)
 		return;
 #endif /* #ifdef CONFIG_PROVE_RCU_REPEATEDLY */
 	/* Note: the following can be executed concurrently, so be careful. */
+
+	/* Add by Mtk */
+	lockdep_aee();
+
 	printk("\n");
 	printk("===============================\n");
 	printk("[ INFO: suspicious RCU usage. ]\n");
@@ -4238,6 +4321,8 @@ void lockdep_rcu_suspicious(const char *file, const int line, const char *s)
 				? "RCU used illegally from idle CPU!\n"
 				: "",
 	       rcu_scheduler_active, debug_locks);
+	pr_info("cpu_id = %d, cpu_is_offline = %ld\n",
+		raw_smp_processor_id(), cpu_is_offline(raw_smp_processor_id()));
 
 	/*
 	 * If a CPU is in the RCU-free window in idle (ie: in the section

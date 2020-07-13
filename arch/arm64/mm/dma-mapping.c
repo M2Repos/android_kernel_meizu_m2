@@ -42,7 +42,7 @@ static pgprot_t __get_dma_pgprot(struct dma_attrs *attrs, pgprot_t prot,
 static struct gen_pool *atomic_pool;
 
 #define DEFAULT_DMA_COHERENT_POOL_SIZE  SZ_256K
-static size_t atomic_pool_size = DEFAULT_DMA_COHERENT_POOL_SIZE;
+static size_t atomic_pool_size __initdata = DEFAULT_DMA_COHERENT_POOL_SIZE;
 
 static int __init early_coherent_pool(char *p)
 {
@@ -170,7 +170,7 @@ static void *__dma_alloc_noncoherent(struct device *dev, size_t size,
 	coherent_ptr = dma_common_contiguous_remap(page, size, VM_USERMAP,
 				__get_dma_pgprot(attrs,
 					__pgprot(PROT_NORMAL_NC), false),
-					NULL);
+					__builtin_return_address(0));
 	if (!coherent_ptr)
 		goto no_map;
 
@@ -429,7 +429,7 @@ out:
 
 static int __init swiotlb_late_init(void)
 {
-	size_t swiotlb_size = min(SZ_64M, MAX_ORDER_NR_PAGES << PAGE_SHIFT);
+	size_t swiotlb_size = min(SZ_2M, MAX_ORDER_NR_PAGES << PAGE_SHIFT);
 
 	dma_ops = &noncoherent_swiotlb_dma_ops;
 

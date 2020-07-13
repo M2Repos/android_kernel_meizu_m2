@@ -25,7 +25,9 @@
 #include <linux/mm.h>
 #include <linux/moduleloader.h>
 #include <linux/vmalloc.h>
+#include <asm/alternative.h>
 #include <asm/insn.h>
+#include <asm/sections.h>
 
 #define	AARCH64_INSN_IMM_MOVNZ		AARCH64_INSN_IMM_MAX
 #define	AARCH64_INSN_IMM_MOVK		AARCH64_INSN_IMM_16
@@ -63,15 +65,18 @@ static u64 do_reloc(enum aarch64_reloc_op reloc_op, void *place, u64 val)
 
 static int reloc_data(enum aarch64_reloc_op op, void *place, u64 val, int len)
 {
-	u64 imm_mask = (1 << len) - 1;
 	s64 sval = do_reloc(op, place, val);
 
 	switch (len) {
 	case 16:
 		*(s16 *)place = sval;
+		if (sval < S16_MIN || sval > U16_MAX)
+			return -ERANGE;
 		break;
 	case 32:
 		*(s32 *)place = sval;
+		if (sval < S32_MIN || sval > U32_MAX)
+			return -ERANGE;
 		break;
 	case 64:
 		*(s64 *)place = sval;
@@ -80,21 +85,6 @@ static int reloc_data(enum aarch64_reloc_op op, void *place, u64 val, int len)
 		pr_err("Invalid length (%d) for data relocation\n", len);
 		return 0;
 	}
-
-	/*
-	 * Extract the upper value bits (including the sign bit) and
-	 * shift them to bit 0.
-	 */
-	sval = (s64)(sval & ~(imm_mask >> 1)) >> (len - 1);
-
-	/*
-	 * Overflow has occurred if the value is not representable in
-	 * len bits (i.e the bottom len bits are not sign-extended and
-	 * the top bits are not all zero).
-	 */
-	if ((u64)(sval + 1) > 2)
-		return -ERANGE;
-
 	return 0;
 }
 
@@ -395,4 +385,21 @@ overflow:
 	pr_err("module %s: overflow in relocation type %d val %Lx\n",
 	       me->name, (int)ELF64_R_TYPE(rel[i].r_info), val);
 	return -ENOEXEC;
+}
+
+int module_finalize(const Elf_Ehdr *hdr,
+		    const Elf_Shdr *sechdrs,
+		    struct module *me)
+{
+	const Elf_Shdr *s, *se;
+	const char *secstrs = (void *)hdr + sechdrs[hdr->e_shstrndx].sh_offset;
+
+	for (s = sechdrs, se = sechdrs + hdr->e_shnum; s < se; s++) {
+		if (strcmp(".altinstructions", secstrs + s->sh_name) == 0) {
+			apply_alternatives((void *)s->sh_addr, s->sh_size);
+			return 0;
+		}
+	}
+
+	return 0;
 }

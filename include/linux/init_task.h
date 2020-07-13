@@ -15,6 +15,8 @@
 #include <net/net_namespace.h>
 #include <linux/sched/rt.h>
 
+#include <asm/thread_info.h>
+
 #ifdef CONFIG_SMP
 # define INIT_PUSHABLE_TASKS(tsk)					\
 	.pushable_tasks = PLIST_NODE_INIT(tsk.pushable_tasks, MAX_PRIO),
@@ -166,14 +168,21 @@ extern struct task_group root_task_group;
 # define INIT_RT_MUTEXES(tsk)
 #endif
 
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+# define INIT_TASK_TI(tsk) .thread_info = INIT_THREAD_INFO(tsk),
+#else
+# define INIT_TASK_TI(tsk)
+#endif
+
 /*
  *  INIT_TASK is used to set up the first task table, touch at
  * your own risk!. Base=0, limit=0x1fffff (=2MB)
  */
 #define INIT_TASK(tsk)	\
 {									\
+	INIT_TASK_TI(tsk)						\
 	.state		= 0,						\
-	.stack		= &init_thread_info,				\
+	.stack		= init_stack,					\
 	.usage		= ATOMIC_INIT(2),				\
 	.flags		= PF_KTHREAD,					\
 	.prio		= MAX_PRIO-20,					\
@@ -184,6 +193,9 @@ extern struct task_group root_task_group;
 	.nr_cpus_allowed= NR_CPUS,					\
 	.mm		= NULL,						\
 	.active_mm	= &init_mm,					\
+	.restart_block = {						\
+		.fn = do_no_restart_syscall,				\
+	},								\
 	.se		= {						\
 		.group_node 	= LIST_HEAD_INIT(tsk.se.group_node),	\
 	},								\

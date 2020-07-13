@@ -79,6 +79,8 @@ int usb_gadget_map_request(struct usb_gadget *gadget,
 			dev_err(&gadget->dev, "failed to map buffer\n");
 			return -EFAULT;
 		}
+
+		req->dma_mapped = 1;
 	}
 
 	return 0;
@@ -96,9 +98,10 @@ void usb_gadget_unmap_request(struct usb_gadget *gadget,
 				is_in ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
 		req->num_mapped_sgs = 0;
-	} else {
+	} else if (req->dma_mapped) {
 		dma_unmap_single(&gadget->dev, req->dma, req->length,
 				is_in ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+		req->dma_mapped = 0;
 	}
 }
 EXPORT_SYMBOL_GPL(usb_gadget_unmap_request);
@@ -301,7 +304,6 @@ err4:
 
 err3:
 	put_device(&udc->dev);
-	device_del(&gadget->dev);
 
 err2:
 	put_device(&gadget->dev);
@@ -401,7 +403,17 @@ static int udc_bind_to_driver(struct usb_udc *udc, struct usb_gadget_driver *dri
 		driver->unbind(udc->gadget);
 		goto err1;
 	}
-	usb_gadget_connect(udc->gadget);
+
+	/*
+	 * HACK: The Android gadget driver disconnects the gadget
+	 * on bind and expects the gadget to stay disconnected until
+	 * it calls usb_gadget_connect when userspace is ready. Remove
+	 * the call to usb_gadget_connect bellow to avoid enabling the
+	 * pullup before userspace is ready.
+	 *
+	 * usb_gadget_connect(udc->gadget);
+	 */
+
 
 	kobject_uevent(&udc->dev.kobj, KOBJ_CHANGE);
 	return 0;

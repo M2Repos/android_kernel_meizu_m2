@@ -274,6 +274,7 @@ static const char **find_next(void *v, loff_t *pos)
 	if (*pos < last_index + start_index)
 		return __start___tracepoint_str + (*pos - last_index);
 
+	start_index += last_index;
 	return find_next_mod_format(start_index, v, fmt, pos);
 }
 
@@ -299,7 +300,7 @@ static int t_show(struct seq_file *m, void *v)
 	if (!*fmt)
 		return 0;
 
-	seq_printf(m, "0x%lx : \"", *(unsigned long *)fmt);
+	seq_printf(m, "0x%lx : \"", 0L);
 
 	/*
 	 * Tabs and new lines need to be converted.
@@ -357,7 +358,7 @@ static __init int init_trace_printk_function_export(void)
 	struct dentry *d_tracer;
 
 	d_tracer = tracing_init_dentry();
-	if (!d_tracer)
+	if (IS_ERR(d_tracer))
 		return 0;
 
 	trace_create_file("printk_formats", 0444, d_tracer,

@@ -25,6 +25,7 @@
 #include <linux/posix-timers.h>
 #include <linux/workqueue.h>
 #include <linux/freezer.h>
+#include <linux/ratelimit.h>
 
 /**
  * struct alarm_base - Alarm timer bases
@@ -84,8 +85,8 @@ static int alarmtimer_rtc_add_device(struct device *dev,
 
 	if (!rtc->ops->set_alarm)
 		return -1;
-	if (!device_may_wakeup(rtc->dev.parent))
-		return -1;
+	/*if (!device_may_wakeup(rtc->dev.parent))
+		return -1;*/
 
 	spin_lock_irqsave(&rtcdev_lock, flags);
 	if (!rtcdev) {
@@ -137,8 +138,15 @@ static inline void alarmtimer_rtc_timer_init(void) { }
  */
 static void alarmtimer_enqueue(struct alarm_base *base, struct alarm *alarm)
 {
+	static DEFINE_RATELIMIT_STATE(ratelimit, HZ - 1, 5);
+
 	if (alarm->state & ALARMTIMER_STATE_ENQUEUED)
 		timerqueue_del(&base->timerqueue, &alarm->node);
+
+	if (__ratelimit(&ratelimit)) {
+		ratelimit.begin = jiffies;
+		pr_notice("%s, %lld\n", __func__, alarm->node.expires.tv64);
+	}
 
 	timerqueue_add(&base->timerqueue, &alarm->node);
 	alarm->state |= ALARMTIMER_STATE_ENQUEUED;
@@ -797,7 +805,7 @@ static int alarm_timer_nsleep(const clockid_t which_clock, int flags,
 			goto out;
 	}
 
-	restart = &current_thread_info()->restart_block;
+	restart = &current->restart_block;
 	restart->fn = alarm_timer_nsleep_restart;
 	restart->nanosleep.clockid = type;
 	restart->nanosleep.expires = exp.tv64;

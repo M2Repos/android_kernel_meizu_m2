@@ -63,6 +63,7 @@
 #include <linux/binfmts.h>
 #include <linux/sched/sysctl.h>
 #include <linux/kexec.h>
+#include <linux/mount.h>
 
 #include <asm/uaccess.h>
 #include <asm/processor.h>
@@ -104,6 +105,8 @@ extern char core_pattern[];
 extern unsigned int core_pipe_limit;
 #endif
 extern int pid_max;
+extern int extra_free_kbytes;
+extern int min_free_order_shift;
 extern int pid_max_min, pid_max_max;
 extern int percpu_pagelist_fraction;
 extern int compat_log;
@@ -126,6 +129,7 @@ static int __maybe_unused two = 2;
 static int __maybe_unused four = 4;
 static unsigned long one_ul = 1;
 static int one_hundred = 100;
+static int two_hundred = 200;
 #ifdef CONFIG_PRINTK
 static int ten_thousand = 10000;
 #endif
@@ -341,7 +345,8 @@ static struct ctl_table kern_table[] = {
 		.data		= &sysctl_sched_time_avg,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &one
 	},
 	{
 		.procname	= "sched_shares_window_ns",
@@ -1216,6 +1221,34 @@ static struct ctl_table vm_table[] = {
 		.mode           = 0444 /* read-only */,
 		.proc_handler   = pdflush_proc_obsolete,
 	},
+#ifdef CONFIG_MEMCG
+	{
+		.procname	= "vmpressure_level_med",
+		.data		= &vmpressure_level_med,
+		.maxlen		= sizeof(vmpressure_level_med),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &vmpressure_level_critical,
+	},
+	{
+		.procname	= "vmpressure_level_critical",
+		.data		= &vmpressure_level_critical,
+		.maxlen		= sizeof(vmpressure_level_critical),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &vmpressure_level_med,
+		.extra2		= &one_hundred,
+	},
+	{
+		.procname	= "vmpressure_win",
+		.data		= &vmpressure_win,
+		.maxlen		= sizeof(vmpressure_win),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+	},
+#endif
 	{
 		.procname	= "swappiness",
 		.data		= &vm_swappiness,
@@ -1223,7 +1256,7 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &zero,
-		.extra2		= &one_hundred,
+		.extra2		= &two_hundred,
 	},
 #ifdef CONFIG_HUGETLB_PAGE
 	{
@@ -1306,6 +1339,21 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= min_free_kbytes_sysctl_handler,
 		.extra1		= &zero,
+	},
+	{
+		.procname	= "extra_free_kbytes",
+		.data		= &extra_free_kbytes,
+		.maxlen		= sizeof(extra_free_kbytes),
+		.mode		= 0644,
+		.proc_handler	= min_free_kbytes_sysctl_handler,
+		.extra1		= &zero,
+	},
+	{
+		.procname	= "min_free_order_shift",
+		.data		= &min_free_order_shift,
+		.maxlen		= sizeof(min_free_order_shift),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec
 	},
 	{
 		.procname	= "percpu_pagelist_fraction",
@@ -1483,6 +1531,62 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
 	},
+#ifdef CONFIG_ZNDSWAP
+	{
+		.procname	= "dt_swapcache",
+		.data		= &dt_swapcache,
+		.maxlen		= sizeof(dt_swapcache),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+	},
+	{
+		.procname	= "dt_writeback",
+		.data		= &dt_writeback,
+		.maxlen		= sizeof(dt_writeback),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+	},
+	{
+		.procname	= "dt_filecache",
+		.data		= &dt_filecache,
+		.maxlen		= sizeof(dt_filecache),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+	},
+	{
+		.procname	= "dt_watermark",
+		.data		= &dt_watermark,
+		.maxlen		= sizeof(dt_watermark),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+	},
+#endif
+#ifdef CONFIG_HAVE_ARCH_MMAP_RND_BITS
+	{
+		.procname	= "mmap_rnd_bits",
+		.data		= &mmap_rnd_bits,
+		.maxlen		= sizeof(mmap_rnd_bits),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= (void *)&mmap_rnd_bits_min,
+		.extra2		= (void *)&mmap_rnd_bits_max,
+	},
+#endif
+#ifdef CONFIG_HAVE_ARCH_MMAP_RND_COMPAT_BITS
+	{
+		.procname	= "mmap_rnd_compat_bits",
+		.data		= &mmap_rnd_compat_bits,
+		.maxlen		= sizeof(mmap_rnd_compat_bits),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= (void *)&mmap_rnd_compat_bits_min,
+		.extra2		= (void *)&mmap_rnd_compat_bits_max,
+	},
+#endif
 	{ }
 };
 
@@ -1669,6 +1773,14 @@ static struct ctl_table fs_table[] = {
 		.maxlen		= sizeof(pipe_user_pages_soft),
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
+	},
+	{
+		.procname	= "mount-max",
+		.data		= &sysctl_mount_max,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &one,
 	},
 	{ }
 };

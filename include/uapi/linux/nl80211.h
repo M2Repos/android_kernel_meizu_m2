@@ -738,6 +738,10 @@
  *	before removing a station entry entirely, or before disassociating
  *	or similar, cleanup will happen in the driver/device in this case.
  *
+ * @NL80211_CMD_ABORT_SCAN: Stop an ongoing scan. Returns -ENOENT if a scan is
+ *	not running. The driver indicates the status of the scan through
+ *	cfg80211_scan_done().
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -911,6 +915,19 @@ enum nl80211_commands {
 
 	NL80211_CMD_ADD_TX_TS,
 	NL80211_CMD_DEL_TX_TS,
+
+	NL80211_CMD_GET_MPP,
+
+	NL80211_CMD_JOIN_OCB,
+	NL80211_CMD_LEAVE_OCB,
+
+	NL80211_CMD_CH_SWITCH_STARTED_NOTIFY,
+
+	NL80211_CMD_TDLS_CHANNEL_SWITCH,
+	NL80211_CMD_TDLS_CANCEL_CHANNEL_SWITCH,
+
+	NL80211_CMD_WIPHY_REG_CHANGE,
+	NL80211_CMD_ABORT_SCAN,
 
 	/* add new commands above here */
 
@@ -1608,7 +1625,10 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_IFACE_SOCKET_OWNER: flag attribute, if set during interface
  *	creation then the new interface will be owned by the netlink socket
- *	that created it and will be destroyed when the socket is closed
+ *	that created it and will be destroyed when the socket is closed.
+ *	If set during scheduled scan start then the new scan req will be
+ *	owned by the netlink socket that created it and the scheduled scan will
+ *	be stopped when the socket is closed.
  *
  * @NL80211_ATTR_TDLS_INITIATOR: flag attribute indicating the current end is
  *	the TDLS link initiator.

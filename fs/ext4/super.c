@@ -304,6 +304,8 @@ static void __save_error_info(struct super_block *sb, const char *func,
 	struct ext4_super_block *es = EXT4_SB(sb)->s_es;
 
 	EXT4_SB(sb)->s_mount_state |= EXT4_ERROR_FS;
+	if (bdev_read_only(sb->s_bdev))
+		return;
 	es->s_state |= cpu_to_le16(EXT4_ERROR_FS);
 	es->s_last_error_time = cpu_to_le32(get_seconds());
 	strncpy(es->s_last_error_func, func, sizeof(es->s_last_error_func));
@@ -779,6 +781,23 @@ static void dump_orphan_list(struct super_block *sb, struct ext4_sb_info *sbi)
 	}
 }
 
+#ifdef CONFIG_QUOTA
+static int ext4_quota_off(struct super_block *sb, int type);
+
+static inline void ext4_quota_off_umount(struct super_block *sb)
+{
+	int type;
+
+	/* Use our quota_off function to clear inode flags etc. */
+	for (type = 0; type < EXT4_MAXQUOTAS; type++)
+		ext4_quota_off(sb, type);
+}
+#else
+static inline void ext4_quota_off_umount(struct super_block *sb)
+{
+}
+#endif
+
 static void ext4_put_super(struct super_block *sb)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
@@ -786,7 +805,7 @@ static void ext4_put_super(struct super_block *sb)
 	int i, err;
 
 	ext4_unregister_li_request(sb);
-	dquot_disable(sb, -1, DQUOT_USAGE_ENABLED | DQUOT_LIMITS_ENABLED);
+	ext4_quota_off_umount(sb);
 
 	flush_workqueue(sbi->rsv_conversion_wq);
 	destroy_workqueue(sbi->rsv_conversion_wq);
@@ -911,7 +930,9 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
 	atomic_set(&ei->i_ioend_count, 0);
 	atomic_set(&ei->i_unwritten, 0);
 	INIT_WORK(&ei->i_rsv_conversion_work, ext4_end_io_rsv_work);
-
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	ei->i_crypt_info = NULL;
+#endif
 	return &ei->vfs_inode;
 }
 
@@ -989,6 +1010,10 @@ void ext4_clear_inode(struct inode *inode)
 		jbd2_free_inode(EXT4_I(inode)->jinode);
 		EXT4_I(inode)->jinode = NULL;
 	}
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+	if (EXT4_I(inode)->i_crypt_info)
+		ext4_free_encryption_info(inode, EXT4_I(inode)->i_crypt_info);
+#endif
 }
 
 static struct inode *ext4_nfs_get_inode(struct super_block *sb,
@@ -1067,7 +1092,6 @@ static int ext4_quota_on(struct super_block *sb, int type, int format_id,
 			 struct path *path);
 static int ext4_quota_on_sysfile(struct super_block *sb, int type,
 				 int format_id);
-static int ext4_quota_off(struct super_block *sb, int type);
 static int ext4_quota_off_sysfile(struct super_block *sb, int type);
 static int ext4_quota_on_mount(struct super_block *sb, int type);
 static ssize_t ext4_quota_read(struct super_block *sb, int type, char *data,
@@ -1146,7 +1170,7 @@ enum {
 	Opt_commit, Opt_min_batch_time, Opt_max_batch_time, Opt_journal_dev,
 	Opt_journal_path, Opt_journal_checksum, Opt_journal_async_commit,
 	Opt_abort, Opt_data_journal, Opt_data_ordered, Opt_data_writeback,
-	Opt_data_err_abort, Opt_data_err_ignore,
+	Opt_data_err_abort, Opt_data_err_ignore, Opt_test_dummy_encryption,
 	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
 	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_jqfmt_vfsv1, Opt_quota,
 	Opt_noquota, Opt_barrier, Opt_nobarrier, Opt_err,
@@ -1232,6 +1256,7 @@ static const match_table_t tokens = {
 	{Opt_init_itable, "init_itable"},
 	{Opt_noinit_itable, "noinit_itable"},
 	{Opt_max_dir_size_kb, "max_dir_size_kb=%u"},
+	{Opt_test_dummy_encryption, "test_dummy_encryption"},
 	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
 	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
 	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
@@ -1430,6 +1455,7 @@ static const struct mount_opts {
 	{Opt_jqfmt_vfsv0, QFMT_VFS_V0, MOPT_QFMT},
 	{Opt_jqfmt_vfsv1, QFMT_VFS_V1, MOPT_QFMT},
 	{Opt_max_dir_size_kb, 0, MOPT_GTE0},
+	{Opt_test_dummy_encryption, 0, MOPT_GTE0},
 	{Opt_err, 0, 0}
 };
 
@@ -1600,6 +1626,15 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 		}
 		*journal_ioprio =
 			IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, arg);
+	} else if (token == Opt_test_dummy_encryption) {
+#ifdef CONFIG_EXT4_FS_ENCRYPTION
+		sbi->s_mount_flags |= EXT4_MF_TEST_DUMMY_ENCRYPTION;
+		ext4_msg(sb, KERN_WARNING,
+			 "Test dummy encryption mode enabled");
+#else
+		ext4_msg(sb, KERN_WARNING,
+			 "Test dummy encryption mount option ignored");
+#endif
 	} else if (m->flags & MOPT_DATAJ) {
 		if (is_remount) {
 			if (!sbi->s_journal)
@@ -2743,11 +2778,13 @@ static struct attribute *ext4_attrs[] = {
 EXT4_INFO_ATTR(lazy_itable_init);
 EXT4_INFO_ATTR(batched_discard);
 EXT4_INFO_ATTR(meta_bg_resize);
+EXT4_INFO_ATTR(encryption);
 
 static struct attribute *ext4_feat_attrs[] = {
 	ATTR_LIST(lazy_itable_init),
 	ATTR_LIST(batched_discard),
 	ATTR_LIST(meta_bg_resize),
+	ATTR_LIST(encryption),
 	NULL,
 };
 
@@ -3131,6 +3168,9 @@ static ext4_group_t ext4_has_uninit_itable(struct super_block *sb)
 {
 	ext4_group_t group, ngroups = EXT4_SB(sb)->s_groups_count;
 	struct ext4_group_desc *gdp = NULL;
+
+	if (!ext4_has_group_desc_csum(sb))
+		return ngroups;
 
 	for (group = 0; group < ngroups; group++) {
 		gdp = ext4_get_group_desc(sb, group, NULL);
@@ -3746,6 +3786,13 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto failed_mount;
 	}
 
+	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_ENCRYPT) &&
+	    es->s_encryption_level) {
+		ext4_msg(sb, KERN_ERR, "Unsupported encryption level %d",
+			 es->s_encryption_level);
+		goto failed_mount;
+	}
+
 	if (le16_to_cpu(sbi->s_es->s_reserved_gdt_blocks) > (blocksize / 4)) {
 		ext4_msg(sb, KERN_ERR,
 			 "Number of reserved GDT blocks insanely large: %d",
@@ -3791,6 +3838,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	} else {
 		sbi->s_inode_size = le16_to_cpu(es->s_inode_size);
 		sbi->s_first_ino = le32_to_cpu(es->s_first_ino);
+		if (sbi->s_first_ino < EXT4_GOOD_OLD_FIRST_INO) {
+			ext4_msg(sb, KERN_ERR, "invalid first ino: %u",
+				 sbi->s_first_ino);
+			goto failed_mount;
+		}
 		if ((sbi->s_inode_size < EXT4_GOOD_OLD_INODE_SIZE) ||
 		    (!is_power_of_2(sbi->s_inode_size)) ||
 		    (sbi->s_inode_size > blocksize)) {
@@ -4134,6 +4186,21 @@ no_journal:
 			ext4_msg(sb, KERN_ERR, "Failed to create an mb_cache");
 			goto failed_mount_wq;
 		}
+	}
+
+	if ((DUMMY_ENCRYPTION_ENABLED(sbi) ||
+	     EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_ENCRYPT)) &&
+	    (blocksize != PAGE_CACHE_SIZE)) {
+		ext4_msg(sb, KERN_ERR,
+			 "Unsupported blocksize for fs encryption");
+		goto failed_mount_wq;
+	}
+
+	if (DUMMY_ENCRYPTION_ENABLED(sbi) &&
+	    !(sb->s_flags & MS_RDONLY) &&
+	    !EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_ENCRYPT)) {
+		EXT4_SET_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_ENCRYPT);
+		ext4_commit_super(sb, 1);
 	}
 
 	/*
@@ -5431,24 +5498,32 @@ static int ext4_quota_off(struct super_block *sb, int type)
 {
 	struct inode *inode = sb_dqopt(sb)->files[type];
 	handle_t *handle;
+	int err;
 
 	/* Force all delayed allocation blocks to be allocated.
 	 * Caller already holds s_umount sem */
 	if (test_opt(sb, DELALLOC))
 		sync_filesystem(sb);
 
-	if (!inode)
+	if (!inode || !igrab(inode))
 		goto out;
+
+	err = dquot_quota_off(sb, type);
+	if (err || EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_QUOTA))
+		goto out_put;
 
 	/* Update modification times of quota files when userspace can
 	 * start looking at them */
 	handle = ext4_journal_start(inode, EXT4_HT_QUOTA, 1);
 	if (IS_ERR(handle))
-		goto out;
+		goto out_put;
 	inode->i_mtime = inode->i_ctime = CURRENT_TIME;
 	ext4_mark_inode_dirty(handle, inode);
 	ext4_journal_stop(handle);
-
+out_put:
+	lockdep_set_quota_inode(inode, I_DATA_SEM_NORMAL);
+	iput(inode);
+	return err;
 out:
 	return dquot_quota_off(sb, type);
 }
@@ -5749,6 +5824,7 @@ out7:
 
 static void __exit ext4_exit_fs(void)
 {
+	ext4_exit_crypto();
 	ext4_destroy_lazyinit_thread();
 	unregister_as_ext2();
 	unregister_as_ext3();

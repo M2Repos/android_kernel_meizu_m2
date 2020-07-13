@@ -357,6 +357,7 @@ static void icmp_push_reply(struct icmp_bxm *icmp_param,
 	struct sk_buff *skb;
 
 	sk = icmp_sk(dev_net((*rt)->dst.dev));
+
 	if (ip_append_data(sk, fl4, icmp_glue_bits, icmp_param,
 			   icmp_param->data_len+icmp_param->head_len,
 			   icmp_param->head_len,
@@ -423,6 +424,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	fl4.daddr = daddr;
 	fl4.saddr = saddr;
 	fl4.flowi4_mark = mark;
+	fl4.flowi4_uid = sock_net_uid(net, NULL);
 	fl4.flowi4_tos = RT_TOS(ip_hdr(skb)->tos);
 	fl4.flowi4_proto = IPPROTO_ICMP;
 	security_skb_classify_flow(skb, flowi4_to_flowi(&fl4));
@@ -454,6 +456,7 @@ static struct rtable *icmp_route_lookup(struct net *net,
 		      param->replyopts.opt.opt.faddr : iph->saddr);
 	fl4->saddr = saddr;
 	fl4->flowi4_mark = mark;
+	fl4->flowi4_uid = sock_net_uid(net, NULL);
 	fl4->flowi4_tos = RT_TOS(tos);
 	fl4->flowi4_proto = IPPROTO_ICMP;
 	fl4->fl4_icmp_type = type;
@@ -944,6 +947,7 @@ int icmp_rcv(struct sk_buff *skb)
 	struct rtable *rt = skb_rtable(skb);
 	struct net *net = dev_net(rt->dst.dev);
 
+
 	if (!xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb)) {
 		struct sec_path *sp = skb_sec_path(skb);
 		int nh;
@@ -1010,6 +1014,7 @@ int icmp_rcv(struct sk_buff *skb)
 	}
 
 	icmp_pointers[icmph->type].handler(skb);
+
 
 drop:
 	kfree_skb(skb);

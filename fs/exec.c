@@ -747,6 +747,9 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	 * will align it up.
 	 */
 	rlim_stack = rlimit(RLIMIT_STACK) & PAGE_MASK;
+
+	stack_expand = rlim_stack;
+
 #ifdef CONFIG_STACK_GROWSUP
 	if (stack_size + stack_expand > rlim_stack)
 		stack_base = vma->vm_start + rlim_stack;
@@ -1120,7 +1123,7 @@ EXPORT_SYMBOL(flush_old_exec);
 
 void would_dump(struct linux_binprm *bprm, struct file *file)
 {
-	if (inode_permission(file_inode(file), MAY_READ) < 0)
+	if (inode_permission2(file->f_path.mnt, file_inode(file), MAY_READ) < 0)
 		bprm->interp_flags |= BINPRM_FLAGS_ENFORCE_NONDUMP;
 }
 EXPORT_SYMBOL(would_dump);

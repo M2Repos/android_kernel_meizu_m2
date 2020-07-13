@@ -430,12 +430,18 @@ nocache:
 		addr = ALIGN(first->va_end, align);
 		if (addr + size < addr)
 			goto overflow;
-
+		/*
 		if (list_is_last(&first->list, &vmap_area_list))
 			goto found;
 
 		first = list_entry(first->list.next,
 				struct vmap_area, list);
+		*/
+		n = rb_next(&first->rb_node);
+		if (n)
+			first = rb_entry(n, struct vmap_area, rb_node);
+		else
+			goto found;
 	}
 
 found:
@@ -593,6 +599,7 @@ void set_iounmap_nonlazy(void)
  * Returns with *start = min(*start, lowest purged address)
  *              *end = max(*end, highest purged address)
  */
+#define MAX_LAZY_VMAP 3000	/* max number vmap_area to purge at a time */
 static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 					int sync, int force_flush)
 {
@@ -601,6 +608,7 @@ static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 	struct vmap_area *va;
 	struct vmap_area *n_va;
 	int nr = 0;
+	int cnt = 0;
 
 	/*
 	 * If sync is 0 but force_flush is 1, we'll go sync anyway but callers
@@ -627,6 +635,9 @@ static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 			list_add_tail(&va->purge_list, &valist);
 			va->flags |= VM_LAZY_FREEING;
 			va->flags &= ~VM_LAZY_FREE;
+			cnt++;
+			if (!sync && !force_flush && (cnt >= MAX_LAZY_VMAP))
+				break;
 		}
 	}
 	rcu_read_unlock();
@@ -838,7 +849,7 @@ static struct vmap_block *new_vmap_block(gfp_t gfp_mask)
 
 	vbq = &get_cpu_var(vmap_block_queue);
 	spin_lock(&vbq->lock);
-	list_add_rcu(&vb->free_list, &vbq->free);
+	list_add_tail_rcu(&vb->free_list, &vbq->free);
 	spin_unlock(&vbq->lock);
 	put_cpu_var(vmap_block_queue);
 

@@ -27,6 +27,10 @@
 
 #include <asm/local.h>
 
+#ifdef CONFIG_MTK_USE_RESERVED_EXT_MEM
+#include <linux/exm_driver.h>
+#endif
+
 static void update_pages_handler(struct work_struct *work);
 
 /*
@@ -401,7 +405,11 @@ size_t ring_buffer_page_len(void *page)
  */
 static void free_buffer_page(struct buffer_page *bpage)
 {
+#ifdef CONFIG_MTK_USE_RESERVED_EXT_MEM
+	extmem_free((void *)bpage->page);
+#else
 	free_page((unsigned long)bpage->page);
+#endif
 	kfree(bpage);
 }
 
@@ -1176,7 +1184,9 @@ static int __rb_allocate_pages(long nr_pages, struct list_head *pages, int cpu)
 	long i;
 
 	for (i = 0; i < nr_pages; i++) {
+#if !defined(CONFIG_MTK_USE_RESERVED_EXT_MEM)
 		struct page *page;
+#endif
 		/*
 		 * __GFP_NORETRY flag makes sure that the allocation fails
 		 * gracefully without invoking oom-killer and the system is
@@ -1190,11 +1200,17 @@ static int __rb_allocate_pages(long nr_pages, struct list_head *pages, int cpu)
 
 		list_add(&bpage->list, pages);
 
+#ifdef CONFIG_MTK_USE_RESERVED_EXT_MEM
+		bpage->page = extmem_malloc_page_align(PAGE_SIZE);
+		if (bpage->page == NULL)
+			goto free_pages;
+#else
 		page = alloc_pages_node(cpu_to_node(cpu),
 					GFP_KERNEL | __GFP_NORETRY, 0);
 		if (!page)
 			goto free_pages;
 		bpage->page = page_address(page);
+#endif
 		rb_init_page(bpage->page);
 	}
 
@@ -1239,7 +1255,9 @@ rb_allocate_cpu_buffer(struct ring_buffer *buffer, long nr_pages, int cpu)
 {
 	struct ring_buffer_per_cpu *cpu_buffer;
 	struct buffer_page *bpage;
+#if !defined(CONFIG_MTK_USE_RESERVED_EXT_MEM)
 	struct page *page;
+#endif
 	int ret;
 
 	cpu_buffer = kzalloc_node(ALIGN(sizeof(*cpu_buffer), cache_line_size()),
@@ -1266,10 +1284,16 @@ rb_allocate_cpu_buffer(struct ring_buffer *buffer, long nr_pages, int cpu)
 	rb_check_bpage(cpu_buffer, bpage);
 
 	cpu_buffer->reader_page = bpage;
+#ifdef CONFIG_MTK_USE_RESERVED_EXT_MEM
+	bpage->page = extmem_malloc_page_align(PAGE_SIZE);
+	if (bpage->page == NULL)
+		goto fail_free_reader;
+#else
 	page = alloc_pages_node(cpu_to_node(cpu), GFP_KERNEL, 0);
 	if (!page)
 		goto fail_free_reader;
 	bpage->page = page_address(page);
+#endif
 	rb_init_page(bpage->page);
 
 	INIT_LIST_HEAD(&cpu_buffer->reader_page->list);
@@ -1403,6 +1427,7 @@ struct ring_buffer *__ring_buffer_alloc(unsigned long size, unsigned flags,
 			rb_free_cpu_buffer(buffer->buffers[cpu]);
 	}
 	kfree(buffer->buffers);
+	buffer->buffers = NULL;
 
  fail_free_cpumask:
 	free_cpumask_var(buffer->cpumask);
@@ -1412,6 +1437,8 @@ struct ring_buffer *__ring_buffer_alloc(unsigned long size, unsigned flags,
 
  fail_free_buffer:
 	kfree(buffer);
+	buffer = NULL;
+
 	return NULL;
 }
 EXPORT_SYMBOL_GPL(__ring_buffer_alloc);
@@ -1424,23 +1451,24 @@ void
 ring_buffer_free(struct ring_buffer *buffer)
 {
 	int cpu;
+	if (buffer) {
+	#ifdef CONFIG_HOTPLUG_CPU
+		cpu_notifier_register_begin();
+		__unregister_cpu_notifier(&buffer->cpu_notify);
+	#endif
 
-#ifdef CONFIG_HOTPLUG_CPU
-	cpu_notifier_register_begin();
-	__unregister_cpu_notifier(&buffer->cpu_notify);
-#endif
+		for_each_buffer_cpu(buffer, cpu)
+			rb_free_cpu_buffer(buffer->buffers[cpu]);
 
-	for_each_buffer_cpu(buffer, cpu)
-		rb_free_cpu_buffer(buffer->buffers[cpu]);
+	#ifdef CONFIG_HOTPLUG_CPU
+		cpu_notifier_register_done();
+	#endif
 
-#ifdef CONFIG_HOTPLUG_CPU
-	cpu_notifier_register_done();
-#endif
+		kfree(buffer->buffers);
+		free_cpumask_var(buffer->cpumask);
 
-	kfree(buffer->buffers);
-	free_cpumask_var(buffer->cpumask);
-
-	kfree(buffer);
+		kfree(buffer);
+	}
 }
 EXPORT_SYMBOL_GPL(ring_buffer_free);
 

@@ -39,6 +39,20 @@
 
 #include "internal.h"
 
+#ifdef __aarch64__
+static void *_memcpy(void *dest, const void *src, size_t count)
+{
+	char *tmp = dest;
+	const char *s = src;
+
+	while (count--)
+		*tmp++ = *s++;
+	return dest;
+}
+
+#define memcpy _memcpy
+#endif
+
 /*
  * We defer making "oops" entries appear in pstore - see
  * whether the system is actually still running well enough
@@ -354,6 +368,7 @@ static struct kmsg_dumper pstore_dumper = {
 };
 
 #ifdef CONFIG_PSTORE_CONSOLE
+/*
 static void pstore_console_write(struct console *con, const char *s, unsigned c)
 {
 	const char *e = s + c;
@@ -378,10 +393,28 @@ static void pstore_console_write(struct console *con, const char *s, unsigned c)
 		c = e - s;
 	}
 }
+*/
+
+static void pstore_simp_console_write(struct console *con, const char *s, unsigned c)
+{
+	u64 id;
+	bool compressed = false;
+
+	psinfo->write_buf(PSTORE_TYPE_CONSOLE, 0, &id, 0, s, compressed, c, psinfo);
+}
+
+void pstore_bconsole_write(struct console *con, const char *s, unsigned c)
+{
+	u64 id;
+	bool compressed = false;
+
+	if (psinfo)
+		psinfo->write_buf(PSTORE_TYPE_CONSOLE, 1, &id, 0, s, compressed, c, psinfo);
+}
 
 static struct console pstore_console = {
 	.name	= "pstore",
-	.write	= pstore_console_write,
+	.write	= pstore_simp_console_write,
 	.flags	= CON_PRINTBUFFER | CON_ENABLED | CON_ANYTIME,
 	.index	= -1,
 };
@@ -402,6 +435,40 @@ static int pstore_write_compat(enum pstore_type_id type,
 {
 	return psi->write_buf(type, reason, id, part, psinfo->buf, compressed,
 			     size, psi);
+}
+
+static int pstore_write_buf_user_compat(enum pstore_type_id type,
+			       enum kmsg_dump_reason reason,
+			       u64 *id, unsigned int part,
+			       const char __user *buf,
+			       bool compressed, size_t size,
+			       struct pstore_info *psi)
+{
+	unsigned long flags = 0;
+	size_t i, bufsize = size;
+	long ret = 0;
+
+	if (unlikely(!access_ok(VERIFY_READ, buf, size)))
+		return -EFAULT;
+	if (bufsize > psinfo->bufsize)
+		bufsize = psinfo->bufsize;
+	spin_lock_irqsave(&psinfo->buf_lock, flags);
+	for (i = 0; i < size; ) {
+		size_t c = min(size - i, bufsize);
+
+		ret = __copy_from_user(psinfo->buf, buf + i, c);
+		if (unlikely(ret != 0)) {
+			ret = -EFAULT;
+			break;
+		}
+		ret = psi->write_buf(type, reason, id, part, psinfo->buf,
+				     compressed, c, psi);
+		if (unlikely(ret < 0))
+			break;
+		i += c;
+	}
+	spin_unlock_irqrestore(&psinfo->buf_lock, flags);
+	return unlikely(ret < 0) ? ret : size;
 }
 
 /*
@@ -428,6 +495,8 @@ int pstore_register(struct pstore_info *psi)
 
 	if (!psi->write)
 		psi->write = pstore_write_compat;
+	if (!psi->write_buf_user)
+		psi->write_buf_user = pstore_write_buf_user_compat;
 	psinfo = psi;
 	mutex_init(&psinfo->read_mutex);
 	spin_unlock(&pstore_lock);
@@ -447,6 +516,7 @@ int pstore_register(struct pstore_info *psi)
 	if ((psi->flags & PSTORE_FLAGS_FRAGILE) == 0) {
 		pstore_register_console();
 		pstore_register_ftrace();
+		pstore_register_pmsg();
 	}
 
 	if (pstore_update_ms >= 0) {

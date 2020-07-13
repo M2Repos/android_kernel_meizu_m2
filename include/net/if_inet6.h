@@ -25,6 +25,8 @@
 #define IF_RA_RCVD	0x20
 #define IF_RS_SENT	0x10
 #define IF_READY	0x80000000
+/*add for VzW feature*/
+#define IF_RS_VZW_SENT 0x01
 
 /* prefix flags */
 #define IF_PREFIX_ONLINK	0x01
@@ -47,12 +49,12 @@ struct inet6_ifaddr {
 	__u32			prefered_lft;
 	atomic_t		refcnt;
 	spinlock_t		lock;
-	spinlock_t		state_lock;
 
 	int			state;
 
 	__u32			flags;
 	__u8			dad_probes;
+	__u8			stable_privacy_retry;
 
 	__u16			scope;
 
@@ -201,6 +203,7 @@ struct inet6_dev {
 	struct ipv6_devstat	stats;
 
 	struct timer_list	rs_timer;
+	__s32			rs_interval;	/* in jiffies */
 	__u8			rs_probes;
 
 	__u8			addr_gen_mode;

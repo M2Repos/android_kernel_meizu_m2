@@ -2,6 +2,8 @@
 # Makefile for the linux kernel.
 #
 
+subdir-ccflags-y += -Werror
+
 obj-y				+= firmware.o
 
 obj-$(CONFIG_ICST)		+= icst.o

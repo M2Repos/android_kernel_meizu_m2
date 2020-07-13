@@ -38,6 +38,8 @@
 #include <asm/tls.h>
 #include <asm/system_misc.h>
 #include <asm/opcodes.h>
+#include <mt-plat/mtk_hooks.h>
+#include <mt-plat/aee.h>
 
 
 static const char *handler[]= {
@@ -311,7 +313,8 @@ static void oops_end(unsigned long flags, struct pt_regs *regs, int signr)
 	if (!die_nest_count)
 		/* Nest count reaches zero, release the lock. */
 		arch_spin_unlock(&die_lock);
-	raw_local_irq_restore(flags);
+	/* not enable irq incase softirq many turn off msdc clock */
+	/*raw_local_irq_restore(flags);*/
 	oops_exit();
 
 	if (in_interrupt())
@@ -401,7 +404,7 @@ int call_undef_hook(struct pt_regs *regs, unsigned int instr)
 {
 	struct undef_hook *hook;
 	unsigned long flags;
-	int (*fn)(struct pt_regs *regs, unsigned int instr) = NULL;
+	int (*fn)(struct pt_regs *regs, unsigned int instr) = arm_undefinstr_retry;
 
 	raw_spin_lock_irqsave(&undef_lock, flags);
 	list_for_each_entry(hook, &undef_hook, node)
@@ -415,9 +418,20 @@ int call_undef_hook(struct pt_regs *regs, unsigned int instr)
 
 asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 {
+	struct thread_info *thread = current_thread_info();
 	unsigned int instr;
 	siginfo_t info;
 	void __user *pc;
+
+	if (!user_mode(regs)) {
+		thread->cpu_excp++;
+		if (thread->cpu_excp == 1) {
+			thread->regs_on_excp = (void *)regs;
+			aee_excp_regs = (void *)regs;
+		}
+		if (thread->cpu_excp >= 2)
+			aee_stop_nested_panic(regs);
+	}
 
 	pc = (void __user *)instruction_pointer(regs);
 
@@ -450,8 +464,11 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 		instr = __mem_to_opcode_arm(instr);
 	}
 
-	if (call_undef_hook(regs, instr) == 0)
+	if (call_undef_hook(regs, instr) == 0) {
+		if (!user_mode(regs))
+			thread->cpu_excp--;
 		return;
+	}
 
 die_sig:
 #ifdef CONFIG_DEBUG_USER
@@ -891,7 +908,6 @@ void __init early_trap_init(void *vectors_base)
 	kuser_init(vectors_base);
 
 	flush_icache_range(vectors, vectors + PAGE_SIZE * 2);
-	modify_domain(DOMAIN_USER, DOMAIN_CLIENT);
 #else /* ifndef CONFIG_CPU_V7M */
 	/*
 	 * on V7-M there is no need to copy the vector table to a dedicated

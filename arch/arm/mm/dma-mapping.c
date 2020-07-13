@@ -1020,8 +1020,6 @@ fs_initcall(dma_debug_do_init);
 
 /* IOMMU */
 
-static int extend_iommu_mapping(struct dma_iommu_mapping *mapping);
-
 static inline dma_addr_t __alloc_iova(struct dma_iommu_mapping *mapping,
 				      size_t size)
 {
@@ -1489,9 +1487,22 @@ static int __map_sg_chunk(struct device *dev, struct scatterlist *sg,
 	if (iova == DMA_ERROR_CODE)
 		return -ENOMEM;
 
+	/* for some pa do not have struct pages, we get the pa from sg_dma_address. */
 	for (count = 0, s = sg; count < (size >> PAGE_SHIFT); s = sg_next(s)) {
-		phys_addr_t phys = page_to_phys(sg_page(s));
-		unsigned int len = PAGE_ALIGN(s->offset + s->length);
+		phys_addr_t phys;
+		unsigned int len;
+
+		/* we have set the iova to DMA_ERROR_CODE in __iommu_map_sg for which have pages */
+		if (!sg_dma_address(s) || sg_dma_address(s) == DMA_ERROR_CODE || !sg_dma_len(s)) {
+			phys = page_to_phys(sg_page(s));
+			len = PAGE_ALIGN(s->offset + s->length);
+		} else {
+			phys = sg_dma_address(s);
+			len = sg_dma_len(s);
+			/* clear the dma address after we get the pa. */
+			sg_dma_address(s) = DMA_ERROR_CODE;
+			sg_dma_len(s) = 0;
+		}
 
 		if (!is_coherent &&
 			!dma_get_attr(DMA_ATTR_SKIP_CPU_SYNC, attrs))
@@ -1527,8 +1538,15 @@ static int __iommu_map_sg(struct device *dev, struct scatterlist *sg, int nents,
 	for (i = 1; i < nents; i++) {
 		s = sg_next(s);
 
-		s->dma_address = DMA_ERROR_CODE;
-		s->dma_length = 0;
+		/*
+		 * this is for pseudo m4u driver user, since some user space memory do not have
+		 * struct pages, and we need to store the pa in sg->dma_address, this is to avoid
+		 * the dma to modify this value.
+		 */
+		if (!sg_dma_address(s) || !sg_dma_len(s)) {
+			s->dma_address = DMA_ERROR_CODE;
+			s->dma_length = 0;
+		}
 
 		if (s->offset || (size & ~PAGE_MASK) || size + s->length > max) {
 			if (__map_sg_chunk(dev, start, size, &dma->dma_address,
@@ -1557,6 +1575,13 @@ static int __iommu_map_sg(struct device *dev, struct scatterlist *sg, int nents,
 bad_mapping:
 	for_each_sg(sg, s, count, i)
 		__iommu_remove_mapping(dev, sg_dma_address(s), sg_dma_len(s));
+
+	/* tell the pseudo driver that the map have been failed. */
+	if (sg_dma_address(sg) && sg_dma_len(sg)) {
+		sg_dma_address(sg) = DMA_ERROR_CODE;
+		sg_dma_len(sg) = 0;
+	}
+
 	return 0;
 }
 
@@ -1933,7 +1958,7 @@ static void release_iommu_mapping(struct kref *kref)
 	kfree(mapping);
 }
 
-static int extend_iommu_mapping(struct dma_iommu_mapping *mapping)
+int extend_iommu_mapping(struct dma_iommu_mapping *mapping)
 {
 	int next_bitmap;
 
@@ -1950,6 +1975,7 @@ static int extend_iommu_mapping(struct dma_iommu_mapping *mapping)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(extend_iommu_mapping);
 
 void arm_iommu_release_mapping(struct dma_iommu_mapping *mapping)
 {

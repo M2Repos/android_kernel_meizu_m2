@@ -52,6 +52,7 @@
 #include <linux/key.h>
 #include <linux/buffer_head.h>
 #include <linux/page_cgroup.h>
+#include <linux/page_ext.h>
 #include <linux/debug_locks.h>
 #include <linux/debugobjects.h>
 #include <linux/lockdep.h>
@@ -78,6 +79,7 @@
 #include <linux/context_tracking.h>
 #include <linux/random.h>
 #include <linux/list.h>
+#include <linux/suspend.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -94,9 +96,6 @@ static int kernel_init(void *);
 extern void init_IRQ(void);
 extern void fork_init(unsigned long);
 extern void radix_tree_init(void);
-#ifndef CONFIG_DEBUG_RODATA
-static inline void mark_rodata_ro(void) { }
-#endif
 
 /*
  * Debug helper: via this flag we know that we are in 'early bootup code'
@@ -395,6 +394,7 @@ static noinline void __init_refok rest_init(void)
 	int pid;
 
 	rcu_scheduler_starting();
+	smpboot_thread_init();
 	/*
 	 * We need to spawn init first so that it obtains pid 1, however
 	 * the init task will end up wanting to create kthreads, which, if
@@ -490,6 +490,7 @@ static void __init mm_init(void)
 	 * bigger than MAX_ORDER unless SPARSEMEM.
 	 */
 	page_cgroup_init_flatmem();
+	page_ext_init_flatmem();
 	mem_init();
 	kmem_cache_init();
 	percpu_init_late();
@@ -577,6 +578,10 @@ asmlinkage __visible void __init start_kernel(void)
 		local_irq_disable();
 	idr_init_cache();
 	rcu_init();
+
+	/* trace_printk() and trace points may be used after this */
+	trace_init();
+
 	context_tracking_init();
 	radix_tree_init();
 	/* init some links before init_ISA_irqs() */
@@ -628,6 +633,7 @@ asmlinkage __visible void __init start_kernel(void)
 	}
 #endif
 	page_cgroup_init();
+	page_ext_init();
 	debug_objects_mem_init();
 	kmemleak_init();
 	setup_per_cpu_pageset();
@@ -771,26 +777,41 @@ static int __init_or_module do_one_initcall_debug(initcall_t fn)
 	rettime = ktime_get();
 	delta = ktime_sub(rettime, calltime);
 	duration = (unsigned long long) ktime_to_ns(delta) >> 10;
-	printk(KERN_DEBUG "initcall %pF returned %d after %lld usecs\n",
+	pr_notice("initcall %pF returned %d after %lld usecs\n",
 		 fn, ret, duration);
 
 	return ret;
 }
+
+#ifdef CONFIG_MTPROF
+#include "bootprof.h"
+#else
+#define TIME_LOG_START()
+#define TIME_LOG_END()
+#define bootprof_initcall(fn, ts)
+#endif
 
 int __init_or_module do_one_initcall(initcall_t fn)
 {
 	int count = preempt_count();
 	int ret;
 	char msgbuf[64];
+#ifdef CONFIG_MTPROF
+	unsigned long long ts = 0;
+#endif
 
 	if (initcall_blacklisted(fn))
 		return -EPERM;
-
+	TIME_LOG_START();
+#if defined(CONFIG_MT_ENG_BUILD)
+	ret = do_one_initcall_debug(fn);
+#else
 	if (initcall_debug)
 		ret = do_one_initcall_debug(fn);
 	else
 		ret = fn();
-
+#endif
+	TIME_LOG_END();
 	msgbuf[0] = 0;
 
 	if (preempt_count() != count) {
@@ -802,6 +823,7 @@ int __init_or_module do_one_initcall(initcall_t fn)
 		local_irq_enable();
 	}
 	WARN(msgbuf[0], "initcall %pF returned with %s\n", fn, msgbuf);
+	bootprof_initcall(fn, ts);
 
 	return ret;
 }
@@ -928,6 +950,28 @@ static int try_to_run_init_process(const char *init_filename)
 
 static noinline void __init kernel_init_freeable(void);
 
+#ifdef CONFIG_DEBUG_RODATA
+static bool rodata_enabled = true;
+static int __init set_debug_rodata(char *str)
+{
+	return strtobool(str, &rodata_enabled);
+}
+__setup("rodata=", set_debug_rodata);
+
+static void mark_readonly(void)
+{
+	if (rodata_enabled)
+		mark_rodata_ro();
+	else
+		pr_info("Kernel memory protection disabled.\n");
+}
+#else
+static inline void mark_readonly(void)
+{
+	pr_warn("This architecture does not have kernel memory protection.\n");
+}
+#endif
+
 static int __ref kernel_init(void *unused)
 {
 	int ret;
@@ -936,11 +980,15 @@ static int __ref kernel_init(void *unused)
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
 	free_initmem();
-	mark_rodata_ro();
+	mark_readonly();
 	system_state = SYSTEM_RUNNING;
 	numa_default_policy();
 
 	flush_delayed_fput();
+
+#ifdef CONFIG_MTPROF
+	log_boot("Kernel_init_done");
+#endif
 
 	if (ramdisk_execute_command) {
 		ret = run_init_process(ramdisk_execute_command);
@@ -1010,6 +1058,11 @@ static noinline void __init kernel_init_freeable(void)
 
 	(void) sys_dup(0);
 	(void) sys_dup(0);
+
+#ifdef CONFIG_MTK_HIBERNATION
+	/* IPO-H, move here for console ok after hibernaton resume */
+	software_resume();
+#endif
 	/*
 	 * check if there is an early userspace init.  If yes, let it do all
 	 * the work

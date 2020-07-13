@@ -2,6 +2,8 @@
 # Makefile for the linux arm-specific parts of the memory manager.
 #
 
+subdir-ccflags-y += -Werror
+
 obj-y				:= dma-mapping.o extable.o fault.o init.o \
 				   iomap.o
 
@@ -18,6 +20,7 @@ obj-$(CONFIG_MODULES)		+= proc-syms.o
 obj-$(CONFIG_ALIGNMENT_TRAP)	+= alignment.o
 obj-$(CONFIG_HIGHMEM)		+= highmem.o
 obj-$(CONFIG_HUGETLB_PAGE)	+= hugetlbpage.o
+obj-$(CONFIG_ARM_PV_FIXUP)	+= pv-fixup-asm.o
 
 obj-$(CONFIG_CPU_ABRT_NOMMU)	+= abort-nommu.o
 obj-$(CONFIG_CPU_ABRT_EV4)	+= abort-ev4.o
@@ -100,3 +103,9 @@ obj-$(CONFIG_CACHE_FEROCEON_L2)	+= cache-feroceon-l2.o
 obj-$(CONFIG_CACHE_L2X0)	+= cache-l2x0.o l2c-l2x0-resume.o
 obj-$(CONFIG_CACHE_XSC3L2)	+= cache-xsc3l2.o
 obj-$(CONFIG_CACHE_TAUROS2)	+= cache-tauros2.o
+
+MTK_PLATFORM := $(CONFIG_MTK_PLATFORM:"%"=%)
+KBUILD_CPPFLAGS += -Werror -I$(srctree)/drivers/misc/mediatek/include
+
+obj-$(CONFIG_MEDIATEK_SOLUTION)	+= mt_cache_v7.o
+obj-$(CONFIG_MEDIATEK_SOLUTION)	+= mt_innercache.o

@@ -23,7 +23,6 @@
 #include <asm/debugreg.h>
 #include <asm/fpu-internal.h> /* pcntxt_mask */
 #include <asm/cpu.h>
-#include <asm/mmu_context.h>
 
 #ifdef CONFIG_X86_32
 __visible unsigned long saved_context_ebx;

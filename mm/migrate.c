@@ -30,6 +30,7 @@
 #include <linux/mempolicy.h>
 #include <linux/vmalloc.h>
 #include <linux/security.h>
+#include <linux/backing-dev.h>
 #include <linux/memcontrol.h>
 #include <linux/syscalls.h>
 #include <linux/hugetlb.h>
@@ -144,7 +145,7 @@ static int remove_migration_pte(struct page *new, struct vm_area_struct *vma,
 		goto unlock;
 
 	get_page(new);
-	pte = pte_mkold(mk_pte(new, vma->vm_page_prot));
+	pte = pte_mkold(mk_pte(new, READ_ONCE(vma->vm_page_prot)));
 	if (pte_swp_soft_dirty(*ptep))
 		pte = pte_mksoft_dirty(pte);
 
@@ -343,6 +344,8 @@ int migrate_page_move_mapping(struct address_space *mapping,
 		struct buffer_head *head, enum migrate_mode mode,
 		int extra_count)
 {
+	struct zone *oldzone, *newzone;
+	int dirty;
 	int expected_count = 1 + extra_count;
 	void **pslot;
 
@@ -352,6 +355,9 @@ int migrate_page_move_mapping(struct address_space *mapping,
 			return -EAGAIN;
 		return MIGRATEPAGE_SUCCESS;
 	}
+
+	oldzone = page_zone(page);
+	newzone = page_zone(newpage);
 
 	spin_lock_irq(&mapping->tree_lock);
 
@@ -393,6 +399,13 @@ int migrate_page_move_mapping(struct address_space *mapping,
 		set_page_private(newpage, page_private(page));
 	}
 
+	/* Move dirty while page refs frozen and newpage not yet exposed */
+	dirty = PageDirty(page);
+	if (dirty) {
+		ClearPageDirty(page);
+		SetPageDirty(newpage);
+	}
+
 	radix_tree_replace_slot(pslot, newpage);
 
 	/*
@@ -401,6 +414,9 @@ int migrate_page_move_mapping(struct address_space *mapping,
 	 * We know this isn't the last reference.
 	 */
 	page_unfreeze_refs(page, expected_count - 1);
+
+	spin_unlock(&mapping->tree_lock);
+	/* Leave irq disabled to prevent preemption while updating stats */
 
 	/*
 	 * If moved to a different zone then also account
@@ -412,13 +428,19 @@ int migrate_page_move_mapping(struct address_space *mapping,
 	 * via NR_FILE_PAGES and NR_ANON_PAGES if they
 	 * are mapped to swap space.
 	 */
-	__dec_zone_page_state(page, NR_FILE_PAGES);
-	__inc_zone_page_state(newpage, NR_FILE_PAGES);
-	if (!PageSwapCache(page) && PageSwapBacked(page)) {
-		__dec_zone_page_state(page, NR_SHMEM);
-		__inc_zone_page_state(newpage, NR_SHMEM);
+	if (newzone != oldzone) {
+		__dec_zone_state(oldzone, NR_FILE_PAGES);
+		__inc_zone_state(newzone, NR_FILE_PAGES);
+		if (PageSwapBacked(page) && !PageSwapCache(page)) {
+			__dec_zone_state(oldzone, NR_SHMEM);
+			__inc_zone_state(newzone, NR_SHMEM);
+		}
+		if (dirty && mapping_cap_account_dirty(mapping)) {
+			__dec_zone_state(oldzone, NR_FILE_DIRTY);
+			__inc_zone_state(newzone, NR_FILE_DIRTY);
+		}
 	}
-	spin_unlock_irq(&mapping->tree_lock);
+	local_irq_enable();
 
 	return MIGRATEPAGE_SUCCESS;
 }
@@ -543,20 +565,9 @@ void migrate_page_copy(struct page *newpage, struct page *page)
 	if (PageMappedToDisk(page))
 		SetPageMappedToDisk(newpage);
 
-	if (PageDirty(page)) {
-		clear_page_dirty_for_io(page);
-		/*
-		 * Want to mark the page and the radix tree as dirty, and
-		 * redo the accounting that clear_page_dirty_for_io undid,
-		 * but we can't use set_page_dirty because that function
-		 * is actually a signal that all of the page has become dirty.
-		 * Whereas only part of our page may be dirty.
-		 */
-		if (PageSwapBacked(page))
-			SetPageDirty(newpage);
-		else
-			__set_page_dirty_nobuffers(newpage);
- 	}
+	/* Move dirty on pages not done by migrate_page_move_mapping() */
+	if (PageDirty(page))
+		SetPageDirty(newpage);
 
 	/*
 	 * Copy NUMA information to the new page, to prevent over-eager
@@ -1172,6 +1183,65 @@ out:
 		current->flags &= ~PF_SWAPWRITE;
 
 	return rc;
+}
+
+/*
+ * migrate_replace_page
+ *
+ * The function takes one single page and a target page (newpage) and
+ * tries to migrate data to the target page. The caller must ensure that
+ * the source page is locked with one additional get_page() call, which
+ * will be freed during the migration. The caller also must release newpage
+ * if migration fails, otherwise the ownership of the newpage is taken.
+ * Source page is released if migration succeeds.
+ *
+ * Return: error code or 0 on success.
+ */
+int migrate_replace_page(struct page *page, struct page *newpage)
+{
+	struct zone *zone = page_zone(page);
+	unsigned long flags;
+	int ret = -EAGAIN;
+	int pass;
+
+	migrate_prep();
+
+	spin_lock_irqsave(&zone->lru_lock, flags);
+
+	if (PageLRU(page) &&
+	    __isolate_lru_page(page, ISOLATE_UNEVICTABLE) == 0) {
+		struct lruvec *lruvec = mem_cgroup_page_lruvec(page, zone);
+		del_page_from_lru_list(page, lruvec, page_lru(page));
+		spin_unlock_irqrestore(&zone->lru_lock, flags);
+	} else {
+		spin_unlock_irqrestore(&zone->lru_lock, flags);
+		return -EAGAIN;
+	}
+
+	/* page is now isolated, so release additional reference */
+	put_page(page);
+
+	for (pass = 0; pass < 10 && ret != 0; pass++) {
+		cond_resched();
+
+		if (page_count(page) == 1) {
+			/* page was freed from under us, so we are done */
+			ret = 0;
+			break;
+		}
+		ret = __unmap_and_move(page, newpage, 1, MIGRATE_SYNC);
+	}
+
+	if (ret == 0) {
+		/* take ownership of newpage and add it to lru */
+		putback_lru_page(newpage);
+	} else {
+		/* restore additional reference to the oldpage */
+		get_page(page);
+	}
+
+	putback_lru_page(page);
+	return ret;
 }
 
 #ifdef CONFIG_NUMA

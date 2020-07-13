@@ -138,8 +138,15 @@ fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
 
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
 
+# Directories which we _might_ need to create, so we have a rule for them.
+firmware-dirs := $(sort $(addprefix $(objtree)/$(obj)/,$(dir $(fw-external-y) $(fw-shipped-all))))
+
+quiet_cmd_mkdir = MKDIR   $(patsubst $(objtree)/%,%,$@)
+      cmd_mkdir = mkdir -p $@
 quiet_cmd_ihex  = IHEX    $@
       cmd_ihex  = $(OBJCOPY) -Iihex -Obinary $< $@
+quiet_cmd_copy  = COPY    $@
+      cmd_copy  = cp $(srctree)/$@ $@
 
 quiet_cmd_ihex2fw  = IHEX2FW $@
       cmd_ihex2fw  = $(objtree)/$(obj)/ihex2fw $< $@

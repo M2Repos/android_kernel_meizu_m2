@@ -258,7 +258,7 @@ static int propagate_one(struct mount *m)
 		read_sequnlock_excl(&mount_lock);
 	}
 	hlist_add_head(&child->mnt_hash, list);
-	return 0;
+	return count_mounts(m->mnt_ns, child);
 }
 
 /*
@@ -410,4 +410,38 @@ int propagate_umount(struct hlist_head *list)
 	hlist_for_each_entry(mnt, list, mnt_hash)
 		__propagate_umount(mnt);
 	return 0;
+}
+
+/*
+ *  Iterates over all slaves, and slaves of slaves.
+ */
+static struct mount *next_descendent(struct mount *root, struct mount *cur)
+{
+	if (!IS_MNT_NEW(cur) && !list_empty(&cur->mnt_slave_list))
+		return first_slave(cur);
+	do {
+		struct mount *master = cur->mnt_master;
+
+		if (!master || cur->mnt_slave.next != &master->mnt_slave_list) {
+			struct mount *next = next_slave(cur);
+
+			return (next == root) ? NULL : next;
+		}
+		cur = master;
+	} while (cur != root);
+	return NULL;
+}
+
+void propagate_remount(struct mount *mnt)
+{
+	struct mount *m = mnt;
+	struct super_block *sb = mnt->mnt.mnt_sb;
+
+	if (sb->s_op->copy_mnt_data) {
+		m = next_descendent(mnt, m);
+		while (m) {
+			sb->s_op->copy_mnt_data(m->mnt.data, mnt->mnt.data);
+			m = next_descendent(mnt, m);
+		}
+	}
 }

@@ -1,0 +1,10 @@
+ifeq ($(CONFIG_TRUSTONIC_TEE_SUPPORT),y)
+	# armv8
+	ifeq ($(CONFIG_TRUSTONIC_TEE_VERSION), "311c")
+		ccflags-y += -I$(srctree)/drivers/misc/mediatek/gud/$(CONFIG_TRUSTONIC_TEE_VERSION)/MobiCoreDriver/include
+		ccflags-y += -I$(srctree)/drivers/misc/mediatek/gud/$(CONFIG_TRUSTONIC_TEE_VERSION)/MobiCoreDriver/public
+	else
+		ccflags-y += -I$(srctree)/drivers/misc/mediatek/gud/$(CONFIG_TRUSTONIC_TEE_VERSION)/gud/MobiCoreKernelApi/include
+		ccflags-y += -I$(srctree)/drivers/misc/mediatek/gud/$(CONFIG_TRUSTONIC_TEE_VERSION)/gud/MobiCoreKernelApi/public
+	endif
+endif

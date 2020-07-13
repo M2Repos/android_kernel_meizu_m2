@@ -35,24 +35,41 @@
 struct task_struct;
 struct exec_domain;
 
+#include <asm/stack_pointer.h>
 #include <asm/types.h>
 
 typedef unsigned long mm_segment_t;
 
 /*
  * low level task data that entry.S needs immediate access to.
- * __switch_to() assumes cpu_context follows immediately after cpu_domain.
  */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
 	mm_segment_t		addr_limit;	/* address limit */
+#ifndef CONFIG_THREAD_INFO_IN_TASK
 	struct task_struct	*task;		/* main task structure */
+#endif
 	struct exec_domain	*exec_domain;	/* execution domain */
-	struct restart_block	restart_block;
+#ifdef CONFIG_ARM64_SW_TTBR0_PAN
+	u64			ttbr0;		/* saved TTBR0_EL1 */
+#endif
 	int			preempt_count;	/* 0 => preemptable, <0 => bug */
+#ifndef CONFIG_THREAD_INFO_IN_TASK
 	int			cpu;		/* cpu */
+#endif
+	void			*regs_on_excp;	/* aee */
+	int			cpu_excp;	/* aee */
 };
 
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+#define INIT_THREAD_INFO(tsk)						\
+{									\
+	.exec_domain    = &default_exec_domain,                         \
+	.preempt_count	= INIT_PREEMPT_COUNT,				\
+	.addr_limit	= KERNEL_DS,					\
+	.cpu_excp       = 0,                    /* aee */               \
+}
+#else
 #define INIT_THREAD_INFO(tsk)						\
 {									\
 	.task		= &tsk,						\
@@ -60,29 +77,30 @@ struct thread_info {
 	.flags		= 0,						\
 	.preempt_count	= INIT_PREEMPT_COUNT,				\
 	.addr_limit	= KERNEL_DS,					\
-	.restart_block	= {						\
-		.fn	= do_no_restart_syscall,			\
-	},								\
+	.cpu_excp	= 0,			/* aee */		\
 }
-
-#define init_thread_info	(init_thread_union.thread_info)
-#define init_stack		(init_thread_union.stack)
-
-/*
- * how to get the current stack pointer from C
- */
-register unsigned long current_stack_pointer asm ("sp");
 
 /*
  * how to get the thread information struct from C
  */
 static inline struct thread_info *current_thread_info(void) __attribute_const__;
 
+/*
+ * struct thread_info can be accessed directly via sp_el0.
+ */
 static inline struct thread_info *current_thread_info(void)
 {
-	return (struct thread_info *)
-		(current_stack_pointer & ~(THREAD_SIZE - 1));
+	unsigned long sp_el0;
+
+	asm ("mrs %0, sp_el0" : "=r" (sp_el0));
+
+	return (struct thread_info *)sp_el0;
 }
+#define init_thread_info	(init_thread_union.thread_info)
+
+#endif
+
+#define init_stack		(init_thread_union.stack)
 
 #define thread_saved_pc(tsk)	\
 	((unsigned long)(tsk->thread.cpu_context.pc))
@@ -118,7 +136,6 @@ static inline struct thread_info *current_thread_info(void)
 #define TIF_RESTORE_SIGMASK	20
 #define TIF_SINGLESTEP		21
 #define TIF_32BIT		22	/* 32bit process */
-#define TIF_SWITCH_MM		23	/* deferred switch_mm */
 
 #define _TIF_SIGPENDING		(1 << TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1 << TIF_NEED_RESCHED)

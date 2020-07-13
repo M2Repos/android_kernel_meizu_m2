@@ -374,30 +374,53 @@ void __init early_print(const char *str, ...)
 
 static void __init cpuid_init_hwcaps(void)
 {
-	unsigned int divide_instrs, vmsa;
+	int block;
+	u32 isar5;
 
 	if (cpu_architecture() < CPU_ARCH_ARMv7)
 		return;
 
-	divide_instrs = (read_cpuid_ext(CPUID_EXT_ISAR0) & 0x0f000000) >> 24;
-
-	switch (divide_instrs) {
-	case 2:
+	block = cpuid_feature_extract(CPUID_EXT_ISAR0, 24);
+	if (block >= 2)
 		elf_hwcap |= HWCAP_IDIVA;
-	case 1:
+	if (block >= 1)
 		elf_hwcap |= HWCAP_IDIVT;
-	}
 
 	/* LPAE implies atomic ldrd/strd instructions */
-	vmsa = (read_cpuid_ext(CPUID_EXT_MMFR0) & 0xf) >> 0;
-	if (vmsa >= 5)
+	block = cpuid_feature_extract(CPUID_EXT_MMFR0, 0);
+	if (block >= 5)
 		elf_hwcap |= HWCAP_LPAE;
+	/* check for supported v8 Crypto instructions */
+	isar5 = read_cpuid_ext(CPUID_EXT_ISAR5);
+#ifdef CONFIG_MTK_ADVERTISE_CE_SUPPORT 
+	block = cpuid_feature_extract_field(isar5, 4);
+	if (block >= 2)
+		elf_hwcap2 |= HWCAP2_PMULL;
+	if (block >= 1)
+		elf_hwcap2 |= HWCAP2_AES;
+
+	block = cpuid_feature_extract_field(isar5, 8);
+	if (block >= 1)
+		elf_hwcap2 |= HWCAP2_SHA1;
+
+	block = cpuid_feature_extract_field(isar5, 12);
+	if (block >= 1)
+		elf_hwcap2 |= HWCAP2_SHA2;
+
+	block = cpuid_feature_extract_field(isar5, 16);
+	if (block >= 1)
+		elf_hwcap2 |= HWCAP2_CRC32;
+#else 
+	block = cpuid_feature_extract_field(isar5, 12); 
+	if (block >= 1) 
+		elf_hwcap2 |= HWCAP2_SHA2; 
+#endif 
+
 }
 
 static void __init elf_hwcap_fixup(void)
 {
 	unsigned id = read_cpuid_id();
-	unsigned sync_prim;
 
 	/*
 	 * HWCAP_TLS is available only on 1136 r1p0 and later,
@@ -418,9 +441,9 @@ static void __init elf_hwcap_fixup(void)
 	 * avoid advertising SWP; it may not be atomic with
 	 * multiprocessing cores.
 	 */
-	sync_prim = ((read_cpuid_ext(CPUID_EXT_ISAR3) >> 8) & 0xf0) |
-		    ((read_cpuid_ext(CPUID_EXT_ISAR4) >> 20) & 0x0f);
-	if (sync_prim >= 0x13)
+	if (cpuid_feature_extract(CPUID_EXT_ISAR3, 12) > 1 ||
+	    (cpuid_feature_extract(CPUID_EXT_ISAR3, 12) == 1 &&
+	     cpuid_feature_extract(CPUID_EXT_ISAR4, 20) >= 3))
 		elf_hwcap &= ~HWCAP_SWP;
 }
 
@@ -748,7 +771,7 @@ static void __init request_standard_resources(const struct machine_desc *mdesc)
 	struct resource *res;
 
 	kernel_code.start   = virt_to_phys(_text);
-	kernel_code.end     = virt_to_phys(_etext - 1);
+	kernel_code.end     = virt_to_phys(__init_begin - 1);
 	kernel_data.start   = virt_to_phys(_sdata);
 	kernel_data.end     = virt_to_phys(_end - 1);
 
@@ -899,8 +922,11 @@ void __init setup_arch(char **cmdline_p)
 	if (!mdesc)
 		mdesc = setup_machine_tags(__atags_pointer, __machine_arch_type);
 	machine_desc = mdesc;
+#ifdef CONFIG_OF
+	machine_name = of_flat_dt_get_machine_name();
+#else
 	machine_name = mdesc->name;
-
+#endif
 	if (mdesc->reboot_mode != REBOOT_HARD)
 		reboot_mode = mdesc->reboot_mode;
 
@@ -917,9 +943,9 @@ void __init setup_arch(char **cmdline_p)
 
 	early_paging_init(mdesc, lookup_processor_type(read_cpuid_id()));
 	setup_dma_zone(mdesc);
-	sanity_check_meminfo();
 	arm_memblock_init(mdesc);
 
+	sanity_check_meminfo();
 	paging_init(mdesc);
 	request_standard_resources(mdesc);
 
@@ -1031,6 +1057,11 @@ static int c_show(struct seq_file *m, void *v)
 {
 	int i, j;
 	u32 cpuid;
+
+	pr_err("Dump cpuinfo\n");
+
+	seq_printf(m, "Processor\t: %s rev %d (%s)\n",
+		   cpu_name, read_cpuid_id() & 15, ELF_PLATFORM);
 
 	for_each_online_cpu(i) {
 		/*

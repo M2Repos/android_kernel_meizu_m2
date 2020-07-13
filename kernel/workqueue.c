@@ -1095,6 +1095,9 @@ static void pwq_activate_delayed_work(struct work_struct *work)
 {
 	struct pool_workqueue *pwq = get_work_pwq(work);
 
+	if (!pwq)
+		pr_err("work(%p:%pf) isn't associated with any pwq\n",
+		       (void *)work, (void *)work->func);
 	trace_workqueue_activate_work(work);
 	move_linked_works(work, &pwq->pool->worklist, NULL);
 	__clear_bit(WORK_STRUCT_DELAYED_BIT, work_data_bits(work));
@@ -1728,9 +1731,7 @@ static struct worker *create_worker(struct worker_pool *pool)
 		goto fail;
 
 	set_user_nice(worker->task, pool->attrs->nice);
-
-	/* prevent userland from meddling with cpumask of workqueue workers */
-	worker->task->flags |= PF_NO_SETAFFINITY;
+	kthread_bind_mask(worker->task, pool->attrs->cpumask);
 
 	/* successful, attach the worker to the pool */
 	worker_attach_to_pool(worker, pool);
@@ -1809,8 +1810,12 @@ static void idle_worker_timeout(unsigned long __pool)
 static void send_mayday(struct work_struct *work)
 {
 	struct pool_workqueue *pwq = get_work_pwq(work);
-	struct workqueue_struct *wq = pwq->wq;
+	struct workqueue_struct *wq = NULL;
 
+	if (!pwq)
+		pr_err("work(%p:%pf) isn't associated with any pwq\n",
+		       (void *)work, (void *)work->func);
+	wq = pwq->wq;
 	lockdep_assert_held(&wq_mayday_lock);
 
 	if (!wq->rescuer)
@@ -1968,9 +1973,10 @@ __acquires(&pool->lock)
 {
 	struct pool_workqueue *pwq = get_work_pwq(work);
 	struct worker_pool *pool = worker->pool;
-	bool cpu_intensive = pwq->wq->flags & WQ_CPU_INTENSIVE;
+	bool cpu_intensive;
 	int work_color;
 	struct worker *collision;
+
 #ifdef CONFIG_LOCKDEP
 	/*
 	 * It is permissible to free the struct work_struct from
@@ -1983,6 +1989,10 @@ __acquires(&pool->lock)
 
 	lockdep_copy_map(&lockdep_map, &work->lockdep_map);
 #endif
+	if (!pwq)
+		pr_err("work(%p:%pf) isn't associated with any pwq\n",
+		       (void *)work, (void *)work->func);
+	cpu_intensive = pwq->wq->flags & WQ_CPU_INTENSIVE;
 	/* ensure we're on the correct CPU */
 	WARN_ON_ONCE(!(pool->flags & POOL_DISASSOCIATED) &&
 		     raw_smp_processor_id() != pool->cpu);
@@ -4151,7 +4161,7 @@ struct workqueue_struct *__alloc_workqueue_key(const char *fmt,
 		}
 
 		wq->rescuer = rescuer;
-		rescuer->task->flags |= PF_NO_SETAFFINITY;
+		kthread_bind_mask(rescuer->task, cpu_possible_mask);
 		wake_up_process(rescuer->task);
 	}
 
@@ -4449,7 +4459,11 @@ void print_worker_info(const char *log_lvl, struct task_struct *task)
 	 */
 	probe_kernel_read(&fn, &worker->current_func, sizeof(fn));
 	probe_kernel_read(&pwq, &worker->current_pwq, sizeof(pwq));
+	if (!pwq)
+		return;
 	probe_kernel_read(&wq, &pwq->wq, sizeof(wq));
+	if (!wq)
+		return;
 	probe_kernel_read(name, wq->name, sizeof(name) - 1);
 
 	/* copy worker description */

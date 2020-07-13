@@ -26,6 +26,16 @@ config IRQ_WORK
 config BUILDTIME_EXTABLE_SORT
 	bool
 
+config THREAD_INFO_IN_TASK
+	bool
+	help
+	  Select this to move thread_info off the stack into task_struct.  To
+	  make this work, an arch will need to remove all thread_info fields
+	  except flags and fix any runtime bugs.
+
+	  One subtle change that will be needed is to use try_get_task_stack()
+	  and put_task_stack() in save_thread_stack_tsk() and get_wchan().
+
 menu "General setup"
 
 config BROKEN
@@ -1650,7 +1660,7 @@ config VM_EVENT_COUNTERS
 config SLUB_DEBUG
 	default y
 	bool "Enable SLUB debugging support" if EXPERT
-	depends on SLUB && SYSFS
+	depends on SLUB && SYSFS && !MTK_ENABLE_AGO
 	help
 	  SLUB has extensive debug support features. Disabling these can
 	  result in significant savings in code size. This also disables
@@ -1677,6 +1687,7 @@ choice
 
 config SLAB
 	bool "SLAB"
+	select HAVE_HARDENED_USERCOPY_ALLOCATOR
 	help
 	  The regular slab allocator that is established and known to work
 	  well in all environments. It organizes cache hot objects in
@@ -1684,6 +1695,7 @@ config SLAB
 
 config SLUB
 	bool "SLUB (Unqueued Allocator)"
+	select HAVE_HARDENED_USERCOPY_ALLOCATOR
 	help
 	   SLUB is a slab allocator that minimizes cache line usage
 	   instead of managing queues of cached objects (SLAB approach).
@@ -1771,6 +1783,7 @@ config HAVE_GENERIC_DMA_COHERENT
 config SLABINFO
 	bool
 	depends on PROC_FS
+	depends on !MTK_ENABLE_GMO
 	depends on SLAB || SLUB_DEBUG
 	default y
 
